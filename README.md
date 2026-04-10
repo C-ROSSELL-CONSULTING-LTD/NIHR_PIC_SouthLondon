@@ -1,6 +1,6 @@
 # NIHR_PIC_SouthLondon
 
-This project is an interactive mapping tool built in Streamlit to identify and analyze potential GP Participation Identification Centre (PIC) sites across South London. It helps researchers find suitable practices by visualising GP/hospital locations, calculating travel times (car, public transport, walking), and overlaying key demographic and disease prevalence data to boost inclusion in clinical research.
+This project is an interactive mapping tool to identify and analyze potential GP Participation Identification Centre (PIC) sites across South London. It helps researchers find suitable practices by visualising GP/hospital locations, calculating travel times (car, public transport, walking), and overlaying key demographic and disease prevalence data to boost inclusion in clinical research.
 
 This tool is built entirely with free and open-source software, using publicly available data, to provide a no-cost solution for NHS staff.
 
@@ -38,8 +38,6 @@ Dynamically returns and highlights all GPs that match the criteria.
 
 Python 3.x
 
-Streamlit: For the interactive web application framework.
-
 Folium: For rendering the interactive map.
 
 Geopandas & Pandas: For all geospatial processing and data manipulation.
@@ -58,7 +56,7 @@ Public Health England (Fingertips): For disease prevalence data.
 
 # Key Caveats & Limitations
 
-Patient Population Proxy: The tool uses the demographics of the LSOA (Lower Layer Super Output Area) where a GP practice is physically located as a proxy for its patient population. This is an estimate and does not reflect the exact registered patient list.
+Patient Population Proxy: The tool uses the demographics of the LSOA (Lower Layer Super Output Area) where a GP practice is physically located as a proxy for its patient population.
 
 Travel Times: Travel time calculations are a one-off snapshot based on the routing API. They do not account for real-time traffic, route diversions, or service changes.
 
