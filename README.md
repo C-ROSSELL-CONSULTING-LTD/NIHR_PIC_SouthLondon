@@ -1,6 +1,6 @@
 # NIHR_PIC_SouthLondon
 
-This project is an interactive mapping tool to identify and analyze potential GP Participation Identification Centre (PIC) sites across South London. It helps researchers find suitable practices by visualising GP/hospital locations, calculating travel times (car, public transport, walking), and overlaying key demographic and disease prevalence data to boost inclusion in clinical research.
+This project is an interactive mapping tool built in Streamlit to identify and analyze potential GP Participation Identification Centre (PIC) sites across South London. It helps researchers find suitable practices by visualising GP/hospital locations, calculating travel times (car, public transport, walking), and overlaying key demographic and disease prevalence data to boost inclusion in clinical research.
 
 This tool is built entirely with free and open-source software, using publicly available data, to provide a no-cost solution for NHS staff.
 
@@ -38,6 +38,8 @@ Dynamically returns and highlights all GPs that match the criteria.
 
 Python 3.x
 
+Streamlit: For the interactive web application framework.
+
 Folium: For rendering the interactive map.
 
 Geopandas & Pandas: For all geospatial processing and data manipulation.
@@ -56,7 +58,7 @@ Public Health England (Fingertips): For disease prevalence data.
 
 # Key Caveats & Limitations
 
-Patient Population Proxy: The tool uses the demographics of the LSOA (Lower Layer Super Output Area) where a GP practice is physically located as a proxy for its patient population.
+Patient Population Proxy: The tool uses the demographics of the LSOA (Lower Layer Super Output Area) where a GP practice is physically located as a proxy for its patient population. This is an estimate and does not reflect the exact registered patient list.
 
 Travel Times: Travel time calculations are a one-off snapshot based on the routing API. They do not account for real-time traffic, route diversions, or service changes.
 
@@ -64,9 +66,47 @@ Student Populations: When viewing age-band data, note that areas with large univ
 
 Migrant Populations: Equally London is a city with many migrants. Not all citizens are registered with GP practices close to their residence or at all.
 
-# Getting Started
+# Project Status & Timeline
 
-(Instructions for local setup will be added here once the repository is established. This will include git clone, pip install -r requirements.txt, and streamlit run app.py.)
+## Current Phase: March 2026 - Data Acquisition ✅ COMPLETE
+
+**Deliverable**: Raw data collection downloaded and stored locally.
+
+See: [March 2026 Checklist](MARCH_2026_CHECKLIST.md) and [Data Acquisition Report](DATA_ACQUISITION_MARCH_2026.md)
+
+### Available Raw Data:
+- ✅ GP Practice Registry (ODS data)
+- ✅ Practice-level Multimorbidity Data (March 2024)  
+- ✅ Dementia Surveillance Data
+- ✅ Delivery Organisation mapping
+
+### Next Phase: April 2026 - Data Cleaning & Preparation
+- Filter for South London ICS only
+- Geocode addresses to lat/lon coordinates
+- Clean and standardize datasets
+- Prepare for travel time calculations
+
+---
+
+# Getting Started (April+)
+
+Once cleaned data is prepared, the project will include:
+
+```bash
+# Local setup
+git clone https://github.com/nihr-pic-southlondon/mapping
+cd mapping
+pip install -r requirements.txt
+
+# Run data preparation scripts (April)
+python scripts/01_prepare_gp_data.py
+python scripts/02_get_hospital_data.py
+python scripts/03_calculate_travel_times.py
+python scripts/04_prepare_dementia_data.py
+
+# Launch Streamlit app (May+)
+streamlit run app.py
+```
 
 # License
 

@@ -1,0 +1,33 @@
+INFO:__main__:============================================================
+INFO:__main__:STEP 1: Geocode GP Practices
+INFO:__main__:============================================================
+INFO:__main__:[INPUT]  data/processed/merged_southlondon.csv
+INFO:__main__:[OK] Loaded 327 South London practices
+INFO:__main__:[GEOCODE] Geocoding 327 practices via Nominatim...
+INFO:utils.geocoding:Geocoded 50/327 addresses (15.3%)
+INFO:utils.geocoding:Geocoded 100/327 addresses (30.6%)
+INFO:utils.geocoding:Geocoded 150/327 addresses (45.9%)
+WARNING:urllib3.connectionpool:Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'ReadTimeoutError("HTTPSConnectionPool(host='nominatim.openstreetmap.org', port=443): Read timed out. (read timeout=10)")': /search?q=SW4+6EB&format=json&limit=1
+WARNING:urllib3.connectionpool:Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'ReadTimeoutError("HTTPSConnectionPool(host='nominatim.openstreetmap.org', port=443): Read timed out. (read timeout=10)")': /search?q=SE23+1RJ&format=json&limit=1
+INFO:utils.geocoding:Geocoded 200/327 addresses (61.2%)
+INFO:utils.geocoding:Geocoded 250/327 addresses (76.5%)
+WARNING:urllib3.connectionpool:Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'ReadTimeoutError("HTTPSConnectionPool(host='nominatim.openstreetmap.org', port=443): Read timed out. (read timeout=10)")': /search?q=SW18+5DS&format=json&limit=1
+INFO:utils.geocoding:Geocoded 300/327 addresses (91.7%)
+INFO:utils.geocoding:Geocoding complete: 327/327 successful
+INFO:__main__:[OK] Geocoded 327/327 practices (100.0%)
+INFO:__main__:[SAVE] 327 practices \u2192 data/processed/gp_practices_geocoded.csv
+INFO:__main__:
+============================================================
+INFO:__main__:SUCCESS! 327 practices geocoded (327 with coordinates)
+INFO:__main__:
+                   practice_name  postcode                                     icb_name   latitude longitude
+0                MANOR BROOK PMS   SE3 0EN  NHS South East London Integrated Care Board  51.469173  0.025154
+1           THE WESTWOOD SURGERY  DA16 2HE  NHS South East London Integrated Care Board   51.46318    0.0973
+2          BARNARD MEDICAL GROUP  DA14 4TA  NHS South East London Integrated Care Board   51.42803  0.105592
+3             THE ALBION SURGERY   DA6 7LP  NHS South East London Integrated Care Board   51.45398    0.1474
+4             BELLEGROVE SURGERY  DA16 3RE  NHS South East London Integrated Care Board  51.464615  0.095763
+5  NORTHUMBERLAND HEATH MED.CTR.   DA8 3DB  NHS South East London Integrated Care Board   51.47693     0.166
+6   GALLIONS REACH HEALTH CENTRE  SE28 8BE  NHS South East London Integrated Care Board  51.505675  0.109451
+7        BLACKHEATH STANDARD PMS   SE3 7HB  NHS South East London Integrated Care Board  51.478144  0.019874
+8              ELTHAM PALACE PMS   SE9 5DQ  NHS South East London Integrated Care Board  51.450114  0.053946
+9   ROYAL ARSENAL MEDICAL CENTRE  SE18 6TE  NHS South East London Integrated Care Board  51.492467  0.073476

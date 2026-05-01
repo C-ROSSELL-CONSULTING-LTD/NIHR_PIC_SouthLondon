@@ -1,0 +1,21 @@
+﻿Field_name,Field_description,Measure,Measure_description
+ACH_DATE,Reporting period end date,N/A,N/A
+PRACTICE_CODE,GP practice code,N/A,N/A
+PRACTICE_NAME,GP practice name,N/A,N/A
+PCN_ODS_CODE,Primary care network to which the GP practice belongs organisational data service code,N/A,N/A
+PCN_NAME,Name of the primary care network to which the GP practice belongs,N/A,N/A
+SUB_ICB_ODS_CODE,Sub ICB location organisational data service code,N/A,N/A
+SUB_ICB_ONS_CODE,Sub ICB location office of national statistics 9-digit geography code,N/A,N/A
+Measure,Data item identifier,ASS_Declined_GP_Mem_Ass,Number of patients with a record of receiving an assessment for dementia by the GP practice since 1 April of the reporting year who have declined a memory assessment in the last 12 months
+Measure,Data item identifier,ASS_Declined_GP_Mem_Clinic,Number of patients with a record of receiving an assessment for dementia by the GP practice since 1 April of the reporting year who have declined a referral to a memory clinic in the last 12 months
+Measure,Data item identifier,ASS_Received_GP,Number of patients with a record of receiving an assessment for dementia by the GP practice since 1 April of the reporting year
+Measure,Data item identifier,ASS_Received_GP_Mem_Ass,Number of patients with a record of receiving an assessment for dementia by the GP practice since 1 April of the reporting year who have also received an initial memory assessment since 1 April of the reporting year
+Measure,Data item identifier,ASS_Received_GP_Mem_Clinic,Number of patients with a record of receiving an assessment for dementia by the GP practice since 1 April of the reporting year who have also been referred to a memory clinic since 1 April of the reporting year
+Measure,Data item identifier,DEMENTIA_REGISTER_0_64,Patients aged 0 to 64 with record of dementia. As defined by the QOF dementia register code cluster.
+Measure,Data item identifier,DEMENTIA_REGISTER_65_PLUS,Patients aged 65 and above with record of dementia. As defined by the QOF dementia register code cluster.
+Measure,Data item identifier,DIAG_Declined_Care_Plan,Number of patients who chose not to receive a dementia care plan or dementia care plan review in the last 12 months
+Measure,Data item identifier,DIAG_Received_Care_Plan,Number of patients with a record of receiving a dementia care plan or dementia care plan review in the last 12 months
+Measure,Data item identifier,DIAG_Received_Med_Rev,"Number of patients with a record of receiving a dementia care plan or dementia care plan review in the last 12 months, who received a medication review since 1 April of the reporting year"
+Measure,Data item identifier,PAT_LIST_0_64,Registered patients aged 0 to 64. This data comes from the National Health Applications Infrastructure Services (NHAIS) extract
+Measure,Data item identifier,PAT_LIST_65_PLUS,Registered patients aged 65 and over. This data comes from the National Health Applications Infrastructure Services (NHAIS) extract
+Value,"Count of measure. Where a value is suppressed, this is represented with a '*'",N/A,N/A

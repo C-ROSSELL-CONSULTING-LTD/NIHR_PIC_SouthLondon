@@ -1,0 +1,31 @@
+Column_Name,Description
+ACH_DATE,Date on which data snapshot was taken
+ORG_TYPE,Organisation type
+ORG_CODE,Organisation code (ODS)
+ONS_CODE,Geography code (ONS)
+AREA_NAME,Name of the area
+DEMENTIA_REGISTER_65_PLUS,Number of patients aged 65 and over on the dementia register
+DEMENTIA_ESTIMATE_65_PLUS,Number of patients aged 65 and over estimated to have dementia
+DIAG_RATE_65_PLUS,Estimated dementia diagnosis rate (EDDR) as a rate of patients aged 65 and over on the dementia register per 100 patients aged 65 and over estimated to have dementia
+DIAG_RATE_65_PLUS_LL,EDDR lower 95% confidence level
+DIAG_RATE_65_PLUS_UL,EDDR upper 95% confidence level
+PAT_LIST_65_PLUS,Number of patients aged 65 and over registered with primary care
+Prevalence_65_PLUS_percent,"Number of people aged 65 and over with a formal diagnosis of dementia on their primary care record, as a percentage of those aged 65 and over registered with the primary care practices (Prevalence percent)"
+Prevalence_65_PLUS_percent_LCI,Prevalence percent lower 95% confidence level
+Prevalence_65_PLUS_percent_UCI,Prevalence percent upper 95% confidence level
+ASS_Received_GP_Mem_Clinic,Number of patients with a record of receiving an assessment for dementia by the GP practice since 1 April of the reporting year who have also been referred to a memory clinic since 1 April of the reporting year
+ASS_Received_GP,Number of patients with a record of receiving an assessment for dementia by the GP practice since 1 April of the reporting year
+MemoryClinicPercent,Referrals to memory clinics as a percentage of all individuals receiving an assessment for dementia since 1 April 
+MemoryClinicPercent_LCI,Referrals to memory clinics lower 95% confidence level
+MemoryClinicPercent_UCI,Referrals to memory clinics upper 95% confidence level
+DEM_REGISTER_WITH_ANTIPSYMEDS_ALL_AGES,Number of patients (all ages) on the dementia register who were also prescribed antipsychotic medication in the preceding 6 weeks
+DEMENTIA_REGISTER_ALL_AGES,Number of patients (all ages) on the dementia register
+AP_Percent,"Antipsychotic prescribing: people with dementia receiving a prescription for antipsychotic medication in the preceding 6 week period, as a percentage of all individuals with a formal diagnosis of dementia"
+AP_Percent_LCI,Antipsychotic prescribing lower 95% confidence level
+AP_Percent_UCI,Antipsychotic prescribing upper 95% confidence level
+DIAG_Received_Care_Plan,Number of patients (all ages) on the dementia register who had a care plan or care plan review in the preceding 12 months
+CarePlansPercent,"Care plans: people with dementia who had a care plan or care plan review in the preceding 12 months, as a percentage of all individuals with a formal diagnosis of dementia"
+CarePlansPercent_LCI,Care plans lower 95% confidence level
+CarePlansPercent_UCI,Care plans upper 95% confidence level
+,
+"Underlying data, caveats and metadata are provided by the NHS: https://digital.nhs.uk/data-and-information/publications/statistical/primary-care-dementia-data",

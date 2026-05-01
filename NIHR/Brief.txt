@@ -1,0 +1,62 @@
+Geographic Mapping Project
+
+This project aims to comprehensively map the geographical distribution of potential Participation Identification Centres (PICs) in South London. A key objective is to understand the proximity of GP practices to research sites, particularly acute hospitals, by visualising their locations and calculating travel times using various transport methods. Additionally, the project seeks to integrate demographic and disease prevalence data to identify GP practices well-suited to recruit underrepresented populations, thereby increasing inclusion in research.
+
+Due to GDPR regulations, the data used for this project should be publicly available data only, published by the NHS and the government (e.g. ONS data). We require a solution to be available for staff to use without paying for licenses and therefore any solutions must be built using free and open source software. For transparency, a public GitHub repository should be available with clearly commented code.
+
+For this project, South London is defined by research locations (e.g., Primary Care, Secondary Care, Community Settings like schools, Residential Care Homes, Prisons) situated within the boundaries of the following Integrated Care Systems (ICSs):
+
+- South East London ICS
+- South West London ICS
+
+Our Delivery Organisations are:
+- Croydon Health Services NHS Trust
+- Epsom and St Helier University Hospitals NHS Trust
+- Guy’s and St Thomas’ NHS Foundation Trust
+- Kingston and Richmond NHS Foundation Trust
+- King’s College Hospital NHS Foundation Trust
+- Lewisham and Greenwich NHS Trust
+- London Ambulance Service NHS Trust
+- Oxleas NHS Foundation Trust
+- South London and Maudsley NHS Foundation Trust
+- South West London and St George’s Mental Health NHS Trust
+- St George’s University Hospitals NHS Foundation Trust
+- The Royal Marsden NHS Foundation Trust
+
+
+As a Regional Research Delivery Network we provide funding and support to the above delivery organisations as well as GP Practices and Community Sites within our region. As part of the research infrastructure in England, GP Practices can function as Participation Identification Centres (PICs). 
+
+PIC sites will identify potential research participants by processing personal data (e.g. through carrying out a search of patient records database to identify individuals that meet a study’s eligibility criteria) by following sponsor instructions in identifying potential research participants and directing these potential participants elsewhere without undertaking any further research activity for that study (i.e. the research occurs at another legal entity).
+
+We have a number of PIC sites in South London, however, would like to increase engagement and encourage GP Practices to become PIC sites. The primary aim of this tool is to comprehensively map the geographical distribution of potential PIC sites
+
+Another aim of this project would be to understand the location of GP Practices in relation to research sites, which mainly take place in Acute Hospital Sites. Being able to visualise which GP Practices are close to which sites, including travel time data in this would help to understand which locations may be suitable for given studies based on accessibility to research sites based on travel times.
+
+If there is time and ability to add in demographic and prevalence data into this project so we could understand the populations of GP Practices and where engagement may help us to increase inclusion in research by targeting underrepresented populations, this would be another useful feature to be able to overlap this data at the lowest output layer possible to help identify GP Practices well suited to recruit these populations.
+
+
+Basic Requirements
+? Free Open Source app hosted on a server we can access
+? Free Open Source code in a public GitHub repository
+? List of all GPs in South London on a map
+? List of all NHS Hospital Sites in South London on the same map to provide visual comparison
+? Provide average travel time from GP Practice to nearest hospital sites, looking at different travel times i.e. car, public transport, walking. This would involve calculating the most accessible hospital site for each GP practice's patient population, considering both geographical proximity and travel time. It would be beneficial to include a toggle feature for accessibility, allowing users to view the quickest routes by public transport or car. This would help identify suitable routes based on participant demographics; for example, car travel time might be more applicable for older participants, while public transport is crucial for younger participants without car access.
+
+
+Additional Requirements
+? Adding overlaying disease prevalence (specific disease rates) and demographic data (e.g., age, ethnicity, socioeconomic status) to target areas we want to encourage participation. 
+? Add in tool for users to input a study site, area of interest (e.g. cancer) and ability to dynamically return options for GP Practices who might be able to act as PIC sites
+
+
+Suggested python packages
+- folium: for interactive maps, enabling clear visualisation of GP practices and hospital sites.
+- RoutingPy: for calculating travel times between locations using various transport methods, leveraging a free API tier.
+- Streamlit: for creating a user-friendly web application that staff can access without licenses.
+Sources: https://geographic.hsma.co.uk/, https://webapps.hsma.co.uk/ 
+
+Data sources
+- ONS Open Geography Portal: for publicly available geographical data.
+- Fingertips PHE: for public health data, including disease prevalence.
+- NHS Organisation Data Services (ODS): for information on NHS organisations, including GP practices and hospital sites.
+
+

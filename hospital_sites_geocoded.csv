@@ -1,0 +1,22 @@
+hospital_name,trust,trust_ods_code,site_ods_code,address,postcode,type,latitude,longitude
+St George's University Hospital,St George's University Hospitals NHS Foundation Trust,RJ7,RJ7,"Blackshaw Road, London, SW17 8QT",SW17 8QT,Hospital,51.428574,-0.165577
+King's College Hospital,King's College Hospital NHS Foundation Trust,RJ2,RJ2,"Denmark Hill, London, SE5 9RS",SE5 9RS,Hospital,51.468078,-0.09389
+Guy's Hospital,Guy's and St Thomas' NHS Foundation Trust,RJ1,RJ1,"Great Maze Pond, London, SE1 9RT",SE1 9RT,Hospital,51.503331,-0.086771
+St Thomas' Hospital,Guy's and St Thomas' NHS Foundation Trust,RJ1,RJ1A,"Lambeth Palace Road, London, SE1 7EH",SE1 7EH,Hospital,51.49796,-0.11888
+The Royal Marsden,The Royal Marsden NHS Foundation Trust,RID,RID,"Fulham Road, London, SW3 6JJ",SW3 6JJ,Hospital,,
+Queen Elizabeth Hospital,Lewisham and Greenwich NHS Trust,RWE,RWE,"Stadium Road, London, SE18 4QH",SE18 4QH,Hospital,51.478194,0.050069
+Lewisham Hospital,Lewisham and Greenwich NHS Trust,RWE,RWE2,"High Street, London, SE13 6LH",SE13 6LH,Hospital,51.453022,-0.017917
+Princess Royal University Hospital,King's College Hospital NHS Foundation Trust,RJ2,RJ2A,"Farnborough, Orpington, BR6 8ND",BR6 8ND,Acute Hospital,51.366244,0.059174
+St Thomas' Hospital,Guy's and St Thomas' NHS Foundation Trust,RJ1,RJ1A,"Lambeth Palace Road, London, SE1 7EH",SE1 7EH,Acute Hospital,51.49796,-0.11888
+Evelina London Children's Hospital,Guy's and St Thomas' NHS Foundation Trust,RJ1,RJ1B,"Guy's Hospital, Great Maze Pond, London, SE1 7EH",SE1 7EH,Specialist Hospital,51.49796,-0.11888
+The Royal Marsden - Sutton,The Royal Marsden NHS Foundation Trust,RID,RIDA,"Downs Road, Sutton, SM2 5PT",SM2 5PT,Cancer Centre,51.343477,-0.19109
+Kingston Hospital,Kingston and Richmond NHS Foundation Trust,RWH,RWH,"Galsworthy Road, Kingston Upon Thames, KT2 7QB",KT2 7QB,Acute Hospital,51.414826,-0.282602
+Richmond Hospital,Kingston and Richmond NHS Foundation Trust,RWH,RWHA,"Kew Foot Road, Richmond, TW9 2TE",TW9 2TE,Acute Hospital,51.466711,-0.300407
+Croydon University Hospital,Croydon Health Services NHS Trust,RXF,RXF,"530 South End, Croydon, CR7 7YE",CR7 7YE,Acute Hospital,51.389128,-0.108758
+St Helier Hospital,Epsom and St Helier University Hospitals NHS Trust,RXL,RXL,"Wrythe Lane, Carshalton, SM5 1AA",SM5 1AA,Acute Hospital,51.380188,-0.183708
+Epsom Hospital,Epsom and St Helier University Hospitals NHS Trust,RXL,RXLA,"Canada Avenue, Epsom, KT18 7EG",KT18 7EG,Acute Hospital,,
+Maudsley Hospital,South London and Maudsley NHS Foundation Trust,RWL,RWL,"Denmark Hill, London, SE5 8AZ",SE5 8AZ,Mental Health Hospital,51.468767,-0.091443
+Bethlem Royal Hospital,South London and Maudsley NHS Foundation Trust,RWL,RWLA,"Monks Orchard Road, Beckenham, BR3 3BX",BR3 3BX,Mental Health Hospital,51.38092,-0.029741
+Oxleas NHS Foundation Trust - Tarn Ward,Oxleas NHS Foundation Trust,RWK,RWK,"Plumstead Common Road, London, SE18 2PH",SE18 2PH,Mental Health Inpatient,51.478329,0.084697
+Springfield Hospital,South West London and St George's Mental Health NHS Trust,RCA,RCA,"61 Glenburnie Road, London, SW19 3ND",SW19 3ND,Mental Health Hospital,51.415232,-0.204107
+Tolworth Hospital,South West London and St George's Mental Health NHS Trust,RCA,RCAA,"Tolworth Rise South, Surbiton, KT6 7QU",KT6 7QU,Mental Health Hospital,51.379085,-0.288494
