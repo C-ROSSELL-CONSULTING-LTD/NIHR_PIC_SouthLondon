@@ -1,0 +1,15 @@
+# Streamlit configuration for NIHR PIC Mapping Tool
+
+[theme]
+base = "light"
+primaryColor = "#0072CE"
+backgroundColor = "#f5f7fa"
+secondaryBackgroundColor = "#eaf1fb"
+textColor = "#1a1a1a"
+
+[client]
+showErrorDetails = true
+toolbarMode = "minimal"
+
+[logger]
+level = "info"

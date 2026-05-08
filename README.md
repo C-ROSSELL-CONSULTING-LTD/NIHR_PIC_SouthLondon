@@ -105,8 +105,36 @@ python scripts/03_calculate_travel_times.py
 python scripts/04_prepare_dementia_data.py
 
 # Launch Streamlit app (May+)
-streamlit run app.py
+streamlit run streamlit_app.py
 ```
+
+## Deployment
+
+### Streamlit Cloud (Recommended)
+The easiest way to deploy publicly without cost:
+
+1. **Push to GitHub**:
+   ```bash
+   git add .
+   git commit -m "Deploy MVP"
+   git push origin main
+   ```
+
+2. **Deploy on Streamlit Cloud**:
+   - Go to https://share.streamlit.io
+   - Sign in with GitHub
+   - Click "New app"
+   - Select this repository, branch `main`, and file `streamlit_app.py`
+   - Click "Deploy"
+
+3. **Your app is live** at: `https://<your-username>-nihr-pic-southlondon.streamlit.app`
+
+**Note**: Streamlit Cloud has free tier with generous limits. Data files must be included in the repo or loaded from an accessible URL.
+
+### Other Deployment Options
+- **Heroku** (~$7-50/mo): Requires `Procfile` and `runtime.txt`
+- **AWS/GCP/Azure** (pay-as-you-go): For production with custom infrastructure
+- **Docker** (self-hosted): Maximum control, requires VPS ($5-20/mo)
 
 # License
 
