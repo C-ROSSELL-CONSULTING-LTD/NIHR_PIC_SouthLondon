@@ -66,4 +66,4 @@ Student Populations: When viewing age-band data, note that areas with large univ
 
 Migrant Populations: Equally London is a city with many migrants. Not all citizens are registered with GP practices close to their residence or at all.
 
-his project is licensed under the MIT License - see the LICENSE.txt file for details.
+This project is licensed under the MIT License - see the LICENSE.txt file for details.
