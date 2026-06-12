@@ -420,11 +420,37 @@ def load_data():
         # Load and filter MSOA GeoJSON to South London MSOAs only
         geojson_files = list(boundaries_dir.glob("*.geojson"))
         msoa_geojson = None
+        icb_geojsons = {}
+        
         if geojson_files:
-            south_london_msoa_codes = set(msoa_dementia["MSOA21CD"].dropna().unique())
-            gdf = gpd.read_file(str(geojson_files[0]))
-            gdf_filtered = gdf[gdf["MSOA21CD"].isin(south_london_msoa_codes)].copy()
-            msoa_geojson = json.loads(gdf_filtered.to_json())
+            # Find and load MSOA file
+            msoa_file = [f for f in geojson_files if "Middle_layer" in f.name]
+            if msoa_file:
+                south_london_msoa_codes = set(msoa_dementia["MSOA21CD"].dropna().unique())
+                gdf = gpd.read_file(str(msoa_file[0]))
+                gdf_filtered = gdf[gdf["MSOA21CD"].isin(south_london_msoa_codes)].copy()
+                msoa_geojson = json.loads(gdf_filtered.to_json())
+            
+            # Load ICB boundary files and wrap in Feature structure for Folium
+            icb_se = [f for f in geojson_files if "South_East" in f.name]
+            icb_sw = [f for f in geojson_files if "South_West" in f.name]
+            
+            if icb_se:
+                geom = json.load(open(str(icb_se[0])))
+                # MapIt returns raw geometry, wrap it in a Feature for Folium compatibility
+                icb_geojsons['SE London'] = {
+                    "type": "Feature",
+                    "properties": {"name": "NHS South East London ICB - 72Q"},
+                    "geometry": geom
+                }
+            if icb_sw:
+                geom = json.load(open(str(icb_sw[0])))
+                # MapIt returns raw geometry, wrap it in a Feature for Folium compatibility
+                icb_geojsons['SW London'] = {
+                    "type": "Feature",
+                    "properties": {"name": "NHS South West London Integrated Care Board"},
+                    "geometry": geom
+                }
 
         # Load diabetes data (practice-level)
         diabetes_file = data_dir / "diabetes_by_practice.csv"
@@ -441,6 +467,7 @@ def load_data():
             'dementia': dementia_data,
             'diabetes': diabetes_data,
             'msoa_geojson': msoa_geojson,
+            'icb_geojsons': icb_geojsons,
         }
     except Exception as e:
         logger.error(f"Error loading data: {e}")
@@ -468,7 +495,9 @@ def create_map(
     hospital_data,
     msoa_dementia=None,
     msoa_geojson=None,
+    icb_geojsons=None,
     show_msoa_overlay=False,
+    show_icb_boundaries=True,
     msoa_metric="density_65plus",
     highlighted_practices=None,
     highlighted_hospitals=None,
@@ -479,12 +508,14 @@ def create_map(
     min_lon=-0.35,
     max_lon=0.2,
 ):
-    """Create interactive Folium map with GP practices, hospital sites, and optional MSOA overlay.
+    """Create interactive Folium map with GP practices, hospital sites, optional MSOA overlay, and ICB boundaries.
     
     Args:
         highlighted_practices: Set of practice_code_gp values to highlight in green
         show_gp_practices: Toggle GP practices layer visibility
         show_hospitals: Toggle hospitals layer visibility
+        show_icb_boundaries: Toggle ICB boundary layer visibility
+        icb_geojsons: Dict of ICB boundary GeoJSON objects
     """
 
     center_lat = (min_lat + max_lat) / 2
@@ -502,6 +533,37 @@ def create_map(
     )
     
     all_bounds = []  # Collect all bounds for fitting
+    
+    if icb_geojsons is None:
+        icb_geojsons = {}
+
+    # --- ICB Boundaries ---
+    if show_icb_boundaries and icb_geojsons:
+        icb_layer = folium.FeatureGroup(name="🗺️ ICB Boundaries", show=True)
+        
+        # Define colors for each ICB
+        icb_colors = {
+            'SE London': '#003087',  # NIHR navy
+            'SW London': '#0072CE',  # NIHR blue
+        }
+        
+        for icb_name, icb_geojson in icb_geojsons.items():
+            color = icb_colors.get(icb_name, '#003087')
+            
+            folium.GeoJson(
+                data=icb_geojson,
+                style_function=lambda x, c=color: {
+                    'fillColor': c,
+                    'color': c,
+                    'weight': 2.5,
+                    'opacity': 0.8,
+                    'fillOpacity': 0.1,
+                },
+                popup=folium.Popup(f"<b>{icb_name}</b>", max_width=250),
+                tooltip=icb_name,
+            ).add_to(icb_layer)
+        
+        icb_layer.add_to(m)
 
     # --- MSOA Choropleth Overlay ---
     if show_msoa_overlay and msoa_geojson and msoa_dementia is not None:
@@ -639,7 +701,7 @@ def main():
         # Navigation
         app_mode = st.radio(
             "Select View:",
-            ["📍 Interactive Map", "🌍 Disease Map", "📊 Data Explorer", "ℹ️ About", "♿ Accessibility"],
+            ["📍 Interactive Map", "🌍 Disease Map", "📊 Data Explorer", "ℹ️ About", "📚 Sources", "♿ Accessibility"],
             help="Choose what you'd like to explore"
         )
         
@@ -901,7 +963,9 @@ def main():
                 hospital_data=data['hospitals'],
                 msoa_dementia=data.get('msoa_dementia'),
                 msoa_geojson=data.get('msoa_geojson'),
+                icb_geojsons=data.get('icb_geojsons'),
                 show_msoa_overlay=False,
+                show_icb_boundaries=True,
                 msoa_metric="density_65plus",
                 highlighted_practices=highlighted_gp_codes,
                 highlighted_hospitals=set(selected_hospitals) if len(selected_hospitals) > 0 else set(),
@@ -991,7 +1055,9 @@ def main():
             hospital_data=data['hospitals'],
             msoa_dementia=data.get('msoa_dementia'),
             msoa_geojson=data.get('msoa_geojson'),
+            icb_geojsons=data.get('icb_geojsons'),
             show_msoa_overlay=show_msoa_overlay,
+            show_icb_boundaries=True,
             msoa_metric=msoa_metric,
             show_gp_practices=show_gp_practices,
             show_hospitals=show_hospitals,
@@ -1081,6 +1147,148 @@ def main():
         **Contact & Support**
         
         For questions or feedback, please contact the South London Regional Research Delivery Network.
+        """)
+    
+    elif app_mode == "📚 Sources":
+        st.markdown("## Data sources")
+        
+        st.markdown("""
+        ### Overview
+        
+        This tool integrates publicly available data from multiple NHS and government sources. All data is open access and updated regularly.
+        
+        ---
+        
+        ### Administrative Boundaries
+        
+        #### ICB Boundaries (Integrated Care Boards)
+        
+        **What is an ICB?**
+        > Integrated Care Boards (ICBs) are statutory NHS organisations that plan and coordinate healthcare services across their geographical area. This tool covers two ICBs in London:
+        - **NHS South East London ICB** (formerly Southwark, Lambeth & Lewisham CCG area) — area code: **QKK**
+        - **NHS South West London ICB** (formerly Wandsworth, Kingston, Merton, Sutton, Croydon & Richmond CCGs) — area code: **QWE**
+        
+        **Note:** *ICB* ≠ *ICS* — An **Integrated Care System (ICS)** is a broader partnership that includes the ICB plus local authorities, providers, and social care partners. The ICB is just the NHS statutory part of the ICS.
+        
+        **Source:** [MaPit — MySociety's Boundary Mapping Service](https://mapit.mysociety.org/)
+        - 🔗 [South East London ICB (Area 168382)](https://mapit.mysociety.org/area/168382.html)
+        - 🔗 [South West London ICB (Area 168269)](https://mapit.mysociety.org/area/168269.html)
+        - **Update frequency:** Quarterly (when boundary changes occur)
+        - **Format:** GeoJSON (MultiPolygon geometry)
+        
+        #### MSOA Boundaries (Middle Layer Super Output Areas)
+        
+        **What are MSOAs?**
+        > MSOAs are statistical geography areas defined by the Office for National Statistics (ONS). They contain a minimum of 5,000 residents and are used for reporting health data without disclosing individual practice-level information.
+        
+        **Source:** [ONS Open Geography Portal](https://geoportal.statistics.gov.uk/)
+        - **Version:** December 2021 boundaries (latest available)
+        - **Update frequency:** Every 2-3 years
+        - **Coverage:** England & Wales
+        
+        ---
+        
+        ### Healthcare Infrastructure
+        
+        #### GP Practice Locations
+        
+        **Source:** [OpenStreetMap via Overpass Turbo](https://overpass-turbo.eu/)
+        - **Data collection:** Crowdsourced from OSM contributors
+        - **Coverage:** 327 practices across both South London ICBs
+        - **Last updated:** June 2026 extraction
+        - **Verification:** Matched against NHS ODS register for accuracy
+        
+        **Also used:**
+        - 🔗 [NHS Organisation Data Services (ODS)](https://odsportal.nhsdigital.nhs.uk/) — Official NHS organisation codes and contact details
+        
+        #### Hospital Sites
+        
+        **Source:** [NHS Organisation Data Services (ODS)](https://odsportal.nhsdigital.nhs.uk/)
+        - **Coverage:** 18 acute hospital sites across 11 NHS Trusts
+        - **Update frequency:** Monthly (real-time NHS records)
+        - **Includes:** Hospital names, postcodes, trust affiliations
+        
+        ---
+        
+        ### Disease & Health Data
+        
+        #### Primary Care Dementia Register
+        
+        **Source:** [NHS Digital — Primary Care Dementia Data](https://digital.nhs.uk/data-and-information/publications/statistical/primary-care-dementia-data/march-2024)
+        - **Reporting period:** March 2024 (latest available)
+        - **Coverage:** Practice-level dementia register counts (registered diagnoses)
+        - **Breakdowns:** Total, age 65+, under 65
+        - **Update frequency:** Quarterly (latest: March 2024)
+        - **Note:** Reflects registered patients, not population prevalence
+        
+        #### Diabetes Data
+        
+        **Source:** [NHS Digital — National Diabetes Audit](https://digital.nhs.uk/data-and-information/publications/statistical/national-diabetes-audit)
+        - **Dataset:** National Diabetes Audit 2025-26 (Q3 report — April to December 2025)
+        - **Coverage:** Practice-level diabetes prevalence by type (Type 1, Type 2, and other)
+        - **Granularity:** GP practice, PCN, ICB, and England totals
+        - **Latest report:** [NDA 2025-26 Quarterly Report Q3](https://digital.nhs.uk/data-and-information/publications/statistical/national-diabetes-audit/core-q3-25-26/national-diabetes-audit-nda-2025-26-quarterly-report-for-england-integrated-care-board-icb-primary-care-network-pcn-and-gp-practice)
+        - **Update frequency:** Quarterly
+        - **Format:** Excel workbook with separate sheets for Type 1, Type 2, and other diabetes
+        
+        ---
+        
+        ### Travel Times
+        
+        #### Public Transport & Walking Routes
+        
+        **Source:** [TfL Journey Planner API](https://tfl.gov.uk/info-for/open-data-users/)
+        - **Coverage:** Public transport journey times from all practices to selected hospitals
+        - **Methods:** Bus, tube, rail, walking
+        - **Calculation date:** Pre-computed (March 2026)
+        - **Assumption:** Off-peak times, no real-time traffic considered
+        
+        ---
+        
+        ### Data Quality & Limitations
+        
+        #### Known Limitations
+        - **Practice demographics:** Based on LSOA where practice is located, not actual patient population
+        - **University areas:** May show higher young adult populations that aren't permanent residents
+        - **Travel times:** Pre-computed snapshots, don't reflect real-time congestion
+        - **MSOA overlay:** Aggregated across multiple practices, may mask local variation
+        - **Missing data:** Some practices may lack complete data across all metrics
+        
+        #### Data Validation
+        - ✓ Dementia data validated against NHS Digital QA reports
+        - ✓ Geocoding validated with independent sources (Google Maps, Apple Maps)
+        - ✓ Travel times spot-checked against TfL Journey Planner
+        - ✓ Hospital list cross-checked with NHS Trust websites
+        
+        ---
+        
+        ### How to Access Raw Data
+        
+        Most data sources are publicly available. Here's how to access them directly:
+        
+        | **Dataset** | **Access** |
+        |---|---|
+        | GP Practices | [NHS ODS](https://odsportal.nhsdigital.nhs.uk/) → GP Practice CSV |
+        | Hospital Sites | [NHS ODS](https://odsportal.nhsdigital.nhs.uk/) → Hospital CSV |
+        | MSOA Boundaries | [ONS Portal](https://geoportal.statistics.gov.uk/) → MSOA GeoJSON |
+        | ICB Boundaries | [MaPit](https://mapit.mysociety.org/) → `.geojson` endpoint |
+        | Dementia Data | [NHS Digital](https://digital.nhs.uk/data-and-information/publications/statistical/primary-care-dementia-data/) |
+        | Diabetes Data | [NHS Digital — National Diabetes Audit](https://digital.nhs.uk/data-and-information/publications/statistical/national-diabetes-audit) |
+        | Travel Times | [TfL Journey Planner](https://tfl.gov.uk/plan-a-journey/) (manual queries) |
+        
+        ---
+        
+        ### Data Processing & ETL
+        
+        For details on how this data was processed, extracted, and loaded into this tool:
+        - 📖 See [ETL_REPORT_MARCH_2026.md](../docs/ETL_REPORT_MARCH_2026.md)
+        - 📊 See [DATA_ACQUISITION_MARCH_2026.md](../docs/DATA_ACQUISITION_MARCH_2026.md)
+        
+        ---
+        
+        ### Contact & Feedback
+        
+        Questions about data sources? Contact the South London Regional Research Delivery Network.
         """)
     
     elif app_mode == "♿ Accessibility":
