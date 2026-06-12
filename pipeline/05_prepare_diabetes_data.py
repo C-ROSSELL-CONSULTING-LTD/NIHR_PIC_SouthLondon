@@ -31,6 +31,7 @@ processed_dir = data_dir / "processed"
 
 audit_file = raw_dir / "National Diabetes Audit, 2025-26, April 2025 to December 2025.xlsx"
 gp_geocoded_file = processed_dir / "gp_practices_geocoded.csv"
+practice_data_file = processed_dir / "practice_data_cleaned.csv"
 
 print(f"[DATA] Raw file: {audit_file.name}")
 print(f"[DATA] GP reference: {gp_geocoded_file.name}\n")
@@ -138,6 +139,14 @@ print("="*80 + "\n")
 gp_ref = pd.read_csv(gp_geocoded_file)
 print(f"[OK]   Loaded {len(gp_ref)} existing GP practices\n")
 
+# Load practice data for population info
+if practice_data_file.exists():
+    practice_data = pd.read_csv(practice_data_file)
+    print(f"[OK]   Loaded practice data with population info ({len(practice_data)} records)\n")
+else:
+    practice_data = None
+    print(f"[WARN] Practice data file not found - population data unavailable\n")
+
 # Rename GP code column for merging (might be different names)
 gp_ref_copy = gp_ref.copy()
 if 'practice_code_gp' in gp_ref_copy.columns:
@@ -153,32 +162,85 @@ merged_result = gp_ref_copy.merge(
     how='left'
 )
 
+# Merge population data from practice_data_cleaned if available
+if practice_data is not None:
+    pop_data = practice_data[['PRACTICE_CODE', 'PAT_LIST_0_64', 'PAT_LIST_65_PLUS']].drop_duplicates()
+    pop_data = pop_data.rename(columns={'PRACTICE_CODE': 'GP code'})
+    
+    merged_result = merged_result.merge(
+        pop_data,
+        on='GP code',
+        how='left'
+    )
+    
+    # Calculate total population
+    merged_result['TOTAL_POPULATION'] = (
+        pd.to_numeric(merged_result['PAT_LIST_0_64'], errors='coerce').fillna(0) +
+        pd.to_numeric(merged_result['PAT_LIST_65_PLUS'], errors='coerce').fillna(0)
+    )
+    
+    print(f"[OK]   Added population data to {merged_result['TOTAL_POPULATION'].notna().sum()} practices\n")
+
 # Count matches
 matches = merged_result['diabetes_total_count'].notna().sum()
 print(f"[OK]   Matched diabetes data to {matches} practices ({matches/len(gp_ref)*100:.1f}%)\n")
+
+# ============================================================================
+# LOAD POPULATION DATA
+# ============================================================================
+
+print("="*80)
+print("  STEP 5: ADD POPULATION DATA")
+print("="*80 + "\n")
+
+# Add population info to diabetes_merged for diabetes_by_practice.csv
+if practice_data is not None:
+    pop_data_merged = practice_data[['PRACTICE_CODE', 'PAT_LIST_0_64', 'PAT_LIST_65_PLUS']].drop_duplicates()
+    pop_data_merged = pop_data_merged.rename(columns={'PRACTICE_CODE': 'GP code'})
+    
+    diabetes_merged_with_pop = diabetes_merged.merge(
+        pop_data_merged,
+        on='GP code',
+        how='left'
+    )
+    
+    # Calculate total population for diabetes data
+    diabetes_merged_with_pop['TOTAL_POPULATION'] = (
+        pd.to_numeric(diabetes_merged_with_pop['PAT_LIST_0_64'], errors='coerce').fillna(0) +
+        pd.to_numeric(diabetes_merged_with_pop['PAT_LIST_65_PLUS'], errors='coerce').fillna(0)
+    )
+    
+    print(f"[OK]   Added population data to {diabetes_merged_with_pop['TOTAL_POPULATION'].notna().sum()} diabetes records\n")
+else:
+    diabetes_merged_with_pop = diabetes_merged
+    print(f"[WARN] Population data unavailable - using diabetes data only\n")
 
 # ============================================================================
 # SAVE OUTPUTS
 # ============================================================================
 
 print("="*80)
-print("  STEP 5: SAVE OUTPUTS")
+print("  STEP 6: SAVE OUTPUTS")
 print("="*80 + "\n")
 
-# Save diabetes-only dataset
-diabetes_merged.to_csv(processed_dir / 'diabetes_by_practice.csv', index=False)
-print(f"[OK]   Saved: diabetes_by_practice.csv ({len(diabetes_merged)} records)")
+# Save diabetes-only dataset (with population if available)
+# Drop age-stratified population columns since diabetes isn't age-stratified
+diabetes_output = diabetes_merged_with_pop.drop(columns=['PAT_LIST_0_64', 'PAT_LIST_65_PLUS'], errors='ignore')
+diabetes_output.to_csv(processed_dir / 'diabetes_by_practice.csv', index=False)
+print(f"[OK]   Saved: diabetes_by_practice.csv ({len(diabetes_output)} records)")
 
 # Save merged GP + diabetes
-merged_result.to_csv(processed_dir / 'gp_practices_with_diabetes.csv', index=False)
-print(f"[OK]   Saved: gp_practices_with_diabetes.csv ({len(merged_result)} records)\n")
+# Drop age-stratified population columns since diabetes isn't age-stratified
+merged_output = merged_result.drop(columns=['PAT_LIST_0_64', 'PAT_LIST_65_PLUS'], errors='ignore')
+merged_output.to_csv(processed_dir / 'gp_practices_with_diabetes.csv', index=False)
+print(f"[OK]   Saved: gp_practices_with_diabetes.csv ({len(merged_output)} records)\n")
 
 # ============================================================================
 # SUMMARY STATS
 # ============================================================================
 
 print("="*80)
-print("  SUMMARY")
+print("  STEP 7: SUMMARY STATISTICS")
 print("="*80 + "\n")
 
 print(f"Type 1 Diabetes (South London):")

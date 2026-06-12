@@ -2,7 +2,6 @@
 Script 4: Prepare dementia prevalence data for visualization.
 Sources:
   - DementiaSurveillanceData.csv and Metadata
-  - LSOA-level disease prevalence from PHE
 """
 
 import pandas as pd
@@ -22,7 +21,6 @@ def prepare_dementia_data():
     Prepare dementia prevalence data:
     1. Load dementia surveillance data
     2. Clean and standardize
-    3. Prepare for LSOA-level overlay mapping
     """
     
     logger.info("=" * 60)
@@ -53,19 +51,58 @@ def prepare_dementia_data():
             logger.warning(f"File not found: {path}")
     
     # If we have multimorbidity data, use that
-    pcdem_data_path = os.path.join(project_dir, "data", "archive", "pcdem-prac-data-date-mar-2024.csv")
-    if os.path.exists(pcdem_data_path):
-        logger.info(f"Loading practice dementia data from {pcdem_data_path}...")
+    practice_data_path = os.path.join(project_dir, "data", "processed", "practice_data_cleaned.csv")
+    if os.path.exists(practice_data_path):
+        logger.info(f"Loading practice dementia data from {practice_data_path}...")
         try:
-            pcdem_df = pd.read_csv(pcdem_data_path)
+            practice_df = pd.read_csv(practice_data_path)
             
-            # Extract practice-level dementia info if available
-            dementia_summary = pcdem_df[[
-                'PRACTICE_CODE', 'PRACTICE_NAME', 'ICB_NAME', 
-                'LATEST_DATA_SUBMISSION'
+            # Extract practice-level dementia info with dementia registers and patient lists
+            dementia_summary = practice_df[[
+                'PRACTICE_CODE', 'PRACTICE_NAME', 
+                'DEMENTIA_REGISTER_0_64', 'DEMENTIA_REGISTER_65_PLUS',
+                'PAT_LIST_0_64', 'PAT_LIST_65_PLUS'
             ]].drop_duplicates()
             
+            # Convert to numeric
+            for col in ['DEMENTIA_REGISTER_0_64', 'DEMENTIA_REGISTER_65_PLUS', 'PAT_LIST_0_64', 'PAT_LIST_65_PLUS']:
+                dementia_summary[col] = pd.to_numeric(dementia_summary[col], errors='coerce')
+            
+            # Calculate total population and prevalence percentages
+            dementia_summary['TOTAL_POPULATION'] = (
+                pd.to_numeric(dementia_summary['PAT_LIST_0_64'], errors='coerce').fillna(0) +
+                pd.to_numeric(dementia_summary['PAT_LIST_65_PLUS'], errors='coerce').fillna(0)
+            )
+            
+            dementia_summary['DEMENTIA_REGISTER_TOTAL'] = (
+                pd.to_numeric(dementia_summary['DEMENTIA_REGISTER_0_64'], errors='coerce').fillna(0) +
+                pd.to_numeric(dementia_summary['DEMENTIA_REGISTER_65_PLUS'], errors='coerce').fillna(0)
+            )
+            
+            # Calculate prevalence percentages (safe division)
+            dementia_summary['DEMENTIA_PREVALENCE_0_64_PCT'] = dementia_summary.apply(
+                lambda row: (row['DEMENTIA_REGISTER_0_64'] / row['PAT_LIST_0_64'] * 100) 
+                if pd.notna(row['PAT_LIST_0_64']) and row['PAT_LIST_0_64'] > 0 else None,
+                axis=1
+            )
+            
+            dementia_summary['DEMENTIA_PREVALENCE_65PLUS_PCT'] = dementia_summary.apply(
+                lambda row: (row['DEMENTIA_REGISTER_65_PLUS'] / row['PAT_LIST_65_PLUS'] * 100) 
+                if pd.notna(row['PAT_LIST_65_PLUS']) and row['PAT_LIST_65_PLUS'] > 0 else None,
+                axis=1
+            )
+            
+            dementia_summary['DEMENTIA_PREVALENCE_TOTAL_PCT'] = dementia_summary.apply(
+                lambda row: (row['DEMENTIA_REGISTER_TOTAL'] / row['TOTAL_POPULATION'] * 100) 
+                if row['TOTAL_POPULATION'] > 0 else None,
+                axis=1
+            )
+            
             logger.info(f"Found {len(dementia_summary)} unique practices with dementia data")
+            logger.info(f"Calculated prevalence percentages and total population:")
+            logger.info(f"  - Practices with 0-64 prevalence: {dementia_summary['DEMENTIA_PREVALENCE_0_64_PCT'].notna().sum()}")
+            logger.info(f"  - Practices with 65+ prevalence: {dementia_summary['DEMENTIA_PREVALENCE_65PLUS_PCT'].notna().sum()}")
+            logger.info(f"  - Practices with total prevalence: {dementia_summary['DEMENTIA_PREVALENCE_TOTAL_PCT'].notna().sum()}")
             
             # Save practice-level data
             output_path = os.path.join(PROCESSED_DATA_DIR, "dementia_by_practice.csv")
@@ -77,6 +114,8 @@ def prepare_dementia_data():
             
         except Exception as e:
             logger.error(f"Error processing dementia data: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     logger.warning("No practice-level dementia data found")

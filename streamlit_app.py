@@ -409,10 +409,10 @@ def load_data():
         travel_times_file = data_dir / "travel_times_optimized.csv"
         travel_times = pd.read_csv(travel_times_file) if travel_times_file.exists() else None
 
-        # Load practice-level dementia data
-        practice_data_file = data_dir / "practice_data_cleaned.csv"
-        dementia_data = pd.read_csv(practice_data_file) if practice_data_file.exists() else None
-        # Calculate total dementia and standardize column names
+        # Load practice-level dementia data with prevalence calculations
+        dementia_file = data_dir / "dementia_by_practice.csv"
+        dementia_data = pd.read_csv(dementia_file) if dementia_file.exists() else None
+        # Standardize column names
         if dementia_data is not None:
             dementia_data['DEMENTIA_TOTAL'] = dementia_data['DEMENTIA_REGISTER_65_PLUS'].fillna(0) + dementia_data['DEMENTIA_REGISTER_0_64'].fillna(0)
             dementia_data['practice_code_gp'] = dementia_data['PRACTICE_CODE']
@@ -862,14 +862,18 @@ def main():
             if disease_type == "🧠 Dementia" and dementia_df is not None:
                 if dementia_subtype == "65+ Years":
                     dementia_col = 'DEMENTIA_REGISTER_65_PLUS'
+                    prevalence_col = 'DEMENTIA_PREVALENCE_65PLUS_PCT'
                 elif dementia_subtype == "Under 65":
                     dementia_col = 'DEMENTIA_REGISTER_0_64'
+                    prevalence_col = 'DEMENTIA_PREVALENCE_0_64_PCT'
                 else:  # Total
                     dementia_col = 'DEMENTIA_TOTAL'
+                    prevalence_col = 'DEMENTIA_PREVALENCE_TOTAL_PCT'
                 
-                dementia_filtered = dementia_df[['practice_code_gp', dementia_col]].copy()
+                dementia_filtered = dementia_df[['practice_code_gp', dementia_col, prevalence_col, 'TOTAL_POPULATION']].copy()
                 results = results.merge(dementia_filtered, on='practice_code_gp', how='inner')
                 disease_col_name = dementia_col
+                st.session_state['pic_prevalence_col'] = prevalence_col
                 # Exclude practices with zero disease count when disease ranking is active
                 if disease_weight_norm > 0:
                     results = results[results[disease_col_name] > 0]
@@ -877,14 +881,18 @@ def main():
             elif disease_type == "🩺 Diabetes" and diabetes_df is not None:
                 if diabetes_subtype == "Type 1":
                     diabetes_col = 'diabetes_type1_count'
+                    prevalence_col = 'diabetes_type1_pct'
                 elif diabetes_subtype == "Type 2":
                     diabetes_col = 'diabetes_type2_count'
+                    prevalence_col = 'diabetes_type2_pct'
                 else:  # Total
                     diabetes_col = 'diabetes_total_count'
+                    prevalence_col = 'diabetes_total_pct'
                 
-                diabetes_filtered = diabetes_df[['practice_code_gp', diabetes_col]].copy()
+                diabetes_filtered = diabetes_df[['practice_code_gp', diabetes_col, prevalence_col, 'TOTAL_POPULATION']].copy()
                 results = results.merge(diabetes_filtered, on='practice_code_gp', how='inner')
                 disease_col_name = diabetes_col
+                st.session_state['pic_prevalence_col'] = prevalence_col
                 # Exclude practices with zero disease count when disease ranking is active
                 if disease_weight_norm > 0:
                     results = results[results[disease_col_name] > 0]
@@ -954,6 +962,7 @@ def main():
         highlighted_gp_codes = st.session_state.get('pic_highlighted_codes', set())
         pic_results_df = st.session_state.get('pic_results_df', None)
         disease_col_name = st.session_state.get('pic_disease_col', None)
+        prevalence_col_name = st.session_state.get('pic_prevalence_col', None)
         
         # ========== RIGHT COLUMN: MAP AND RESULTS ==========
         with right_col:
@@ -976,31 +985,41 @@ def main():
             # If results exist, show toggle; otherwise just map
             if pic_results_df is not None and len(pic_results_df) > 0:
                 # Build display dataframe
-                display_cols = ['practice_name', 'postcode', 'pcn_name']
+                display_cols = ['practice_name', 'postcode']
                 if disease_col_name is not None:
                     display_cols.append(disease_col_name)
-                display_cols.append('best_travel_time')
+                if prevalence_col_name is not None:
+                    display_cols.append(prevalence_col_name)
+                if 'TOTAL_POPULATION' in pic_results_df.columns:
+                    display_cols.append('TOTAL_POPULATION')
+                if 'best_travel_time' in pic_results_df.columns:
+                    display_cols.append('best_travel_time')
                 display_cols = [c for c in display_cols if c in pic_results_df.columns]
 
                 rename_map = {
                     'practice_name': 'Practice',
                     'postcode': 'Postcode',
-                    'pcn_name': 'PCN',
                     'best_travel_time': 'Travel (min)',
+                    'TOTAL_POPULATION': 'Population',
                 }
                 if disease_col_name is not None:
                     if disease_col_name == 'DEMENTIA_REGISTER_65_PLUS':
-                        rename_map[disease_col_name] = 'Dementia (65+)'
+                        rename_map[disease_col_name] = 'Register (65+)'
                     elif disease_col_name == 'DEMENTIA_REGISTER_0_64':
-                        rename_map[disease_col_name] = 'Dementia (under 65)'
+                        rename_map[disease_col_name] = 'Register (under 65)'
                     elif disease_col_name == 'DEMENTIA_TOTAL':
-                        rename_map[disease_col_name] = 'Dementia (total)'
+                        rename_map[disease_col_name] = 'Register (total)'
                     elif disease_col_name == 'diabetes_type1_count':
-                        rename_map[disease_col_name] = 'Diabetes (type 1)'
+                        rename_map[disease_col_name] = 'Type 1 Cases'
                     elif disease_col_name == 'diabetes_type2_count':
-                        rename_map[disease_col_name] = 'Diabetes (type 2)'
+                        rename_map[disease_col_name] = 'Type 2 Cases'
                     elif disease_col_name == 'diabetes_total_count':
-                        rename_map[disease_col_name] = 'Diabetes (total)'
+                        rename_map[disease_col_name] = 'Total Cases'
+                if prevalence_col_name is not None:
+                    if 'DEMENTIA' in prevalence_col_name:
+                        rename_map[prevalence_col_name] = 'Prevalence (%)'
+                    else:
+                        rename_map[prevalence_col_name] = 'Prevalence (%)'
 
                 display_df = pic_results_df[display_cols].rename(columns=rename_map).copy()
 
@@ -1020,8 +1039,18 @@ def main():
                 if view_mode == "🗺️ Map":
                     st_folium(map_obj, width="100%")
                 else:
-                    st.dataframe(display_df, use_container_width=True, hide_index=True, height=900)
-                    csv = display_df.to_csv(index=False)
+                    # Format numeric columns for readability
+                    df_display = display_df.copy()
+                    for col in df_display.columns:
+                        if 'Prevalence' in col or 'Population' in col:
+                            if col != 'Population':
+                                df_display[col] = df_display[col].apply(lambda x: f"{x:.2f}" if pd.notna(x) else "N/A")
+                            else:
+                                df_display[col] = df_display[col].apply(lambda x: f"{int(x):,}" if pd.notna(x) else "N/A")
+                        elif 'Register' in col or 'Cases' in col or 'Travel' in col:
+                            df_display[col] = df_display[col].apply(lambda x: f"{int(x)}" if pd.notna(x) else "N/A")
+                    st.dataframe(df_display, use_container_width=True, hide_index=True, height=900)
+                    csv = display_df.to_csv(index=False, float_format='%.2f')
                     st.download_button(
                         label="📥 Download CSV",
                         data=csv,
