@@ -417,6 +417,16 @@ def load_data():
             dementia_data['DEMENTIA_TOTAL'] = dementia_data['DEMENTIA_REGISTER_65_PLUS'].fillna(0) + dementia_data['DEMENTIA_REGISTER_0_64'].fillna(0)
             dementia_data['practice_code_gp'] = dementia_data['PRACTICE_CODE']
 
+            # Attach practice population for GP size filtering in the UI.
+            gp_population = (
+                dementia_data[['practice_code_gp', 'TOTAL_POPULATION']]
+                .dropna(subset=['practice_code_gp'])
+                .drop_duplicates(subset=['practice_code_gp'])
+            )
+            gp_data['practice_code_gp'] = gp_data['practice_code_gp'].astype(str).str.strip()
+            gp_population['practice_code_gp'] = gp_population['practice_code_gp'].astype(str).str.strip()
+            gp_data = gp_data.merge(gp_population, on='practice_code_gp', how='left')
+
         # Load and filter MSOA GeoJSON to South London MSOAs only
         geojson_files = list(boundaries_dir.glob("*.geojson"))
         msoa_geojson = None
@@ -488,6 +498,24 @@ MSOA_OVERLAY_METRICS = {
     "Total Dementia Density": "density_total",
     "Total Dementia Register": "total_dementia",
 }
+
+
+def build_gp_size_slider_options(min_size, max_size):
+    """Build slider options with exact bounds plus sticky points every 1,000."""
+    min_size = int(min_size)
+    max_size = int(max_size)
+    if min_size >= max_size:
+        return [min_size]
+
+    first_thousand = ((min_size + 999) // 1000) * 1000
+    last_thousand = (max_size // 1000) * 1000
+
+    options = [min_size]
+    if first_thousand <= last_thousand:
+        options.extend(list(range(first_thousand, last_thousand + 1, 1000)))
+    options.append(max_size)
+
+    return sorted(set(options))
 
 
 def create_map(
@@ -780,6 +808,76 @@ def main():
             else:
                 gp_icb_filtered = gp_all
 
+            # GP size
+            st.markdown("**GP Size**")
+            if 'TOTAL_POPULATION' in gp_icb_filtered.columns:
+                gp_size_series = pd.to_numeric(gp_icb_filtered['TOTAL_POPULATION'], errors='coerce')
+                if gp_size_series.notna().any():
+                    gp_size_min_bound = int(gp_size_series.min())
+                    gp_size_max_bound = int(gp_size_series.max())
+                    gp_size_options = build_gp_size_slider_options(gp_size_min_bound, gp_size_max_bound)
+
+                    if gp_size_min_bound <= 10000 <= gp_size_max_bound:
+                        gp_size_default = 10000
+                    else:
+                        gp_size_default = min(gp_size_options, key=lambda x: abs(x - 10000))
+
+                    gp_size_min = st.select_slider(
+                        "Minimum practice population:",
+                        options=gp_size_options,
+                        value=gp_size_default,
+                        format_func=lambda x: f"{x:,}",
+                        label_visibility="collapsed",
+                    )
+
+                    # Histogram: bin into 1,000-patient buckets, shade bars left of threshold
+                    import numpy as np
+                    _bin_edges = np.arange(0, gp_size_max_bound + 1001, 1000)
+                    _counts, _ = np.histogram(gp_size_series.dropna().values, bins=_bin_edges)
+                    _hist_df = pd.DataFrame({
+                        "bin_left": _bin_edges[:-1].astype(int),
+                        "count": _counts.astype(int),
+                    })
+                    _hist_df["color"] = _hist_df["bin_left"].apply(
+                        lambda x: "#d0dff2" if x < gp_size_min else "#003087"
+                    )
+                    import altair as alt
+                    _chart = (
+                        alt.Chart(_hist_df)
+                        .mark_bar(size=6)
+                        .encode(
+                            x=alt.X("bin_left:Q", axis=alt.Axis(
+                                title=None, labelFontSize=9,
+                                format="~s", tickCount=6,
+                            )),
+                            y=alt.Y("count:Q", axis=alt.Axis(
+                                title=None, labelFontSize=9, tickMinStep=1,
+                            )),
+                            color=alt.Color(
+                                "color:N",
+                                scale=None,
+                                legend=None,
+                            ),
+                            tooltip=[
+                                alt.Tooltip("bin_left:Q", title="From", format=","),
+                                alt.Tooltip("count:Q", title="Practices"),
+                            ],
+                        )
+                        .properties(height=70)
+                        .configure_view(strokeWidth=0)
+                        .configure_axis(grid=False)
+                    )
+                    _icb_label = {"SE London": "SE London", "SW London": "SW London"}.get(icb_choice, "South London")
+                    st.caption(f"Distribution of {_icb_label} GP practices by registered population")
+                    st.altair_chart(_chart, width="stretch")
+
+                    gp_icb_filtered = gp_icb_filtered[gp_size_series >= gp_size_min].copy()
+                    st.caption(f"Min size: {gp_size_min:,} | Remaining practices: {len(gp_icb_filtered)}")
+                else:
+                    st.caption("GP size data unavailable for selected scope")
+            else:
+                st.caption("GP size data unavailable for selected scope")
+
             hosp_scope = st.radio("Level:", ["Hospital", "Trust"], horizontal=True)
             if hosp_scope == "Trust":
                 trust_list = sorted(set(hosp_trust_map.get(h, '') for h in icb_hosp_list if hosp_trust_map.get(h)))
@@ -1049,7 +1147,7 @@ def main():
                                 df_display[col] = df_display[col].apply(lambda x: f"{int(x):,}" if pd.notna(x) else "N/A")
                         elif 'Register' in col or 'Cases' in col or 'Travel' in col:
                             df_display[col] = df_display[col].apply(lambda x: f"{int(x)}" if pd.notna(x) else "N/A")
-                    st.dataframe(df_display, use_container_width=True, hide_index=True, height=900)
+                    st.dataframe(df_display, width="stretch", hide_index=True, height=900)
                     csv = display_df.to_csv(index=False, float_format='%.2f')
                     st.download_button(
                         label="📥 Download CSV",
@@ -1109,7 +1207,7 @@ def main():
             st.markdown("### GP practices dataset")
             if data['gp'] is not None:
                 st.write(f"**Total Records:** {len(data['gp'])}")
-                st.dataframe(data['gp'].head(10), use_container_width=True)
+                st.dataframe(data['gp'].head(10), width="stretch")
                 
                 with st.expander("📊 Column Information"):
                     st.write(data['gp'].info())
@@ -1118,13 +1216,13 @@ def main():
             st.markdown("### Hospital sites dataset")
             if data['hospitals'] is not None:
                 st.write(f"**Total Records:** {len(data['hospitals'])}")
-                st.dataframe(data['hospitals'].head(10), use_container_width=True)
+                st.dataframe(data['hospitals'].head(10), width="stretch")
         
         with tab3:
             st.markdown("### Travel times data")
             if data['travel_times'] is not None:
                 st.write(f"**Total Records:** {len(data['travel_times'])}")
-                st.dataframe(data['travel_times'].head(10), use_container_width=True)
+                st.dataframe(data['travel_times'].head(10), width="stretch")
             else:
                 st.info("Travel times data not yet generated. This will be computed in the April processing phase.")
     
