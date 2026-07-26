@@ -26,7 +26,7 @@ st.set_page_config(
     page_title="NIHR PIC Mapping - South London",
     page_icon="🗺️",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
 # Custom CSS — NIHR brand style (matching rdn.nihr.ac.uk)
@@ -264,30 +264,10 @@ st.markdown("""
             display: block;
         }
 
-        /* ── Sidebar toggle button — always visible ── */
-        /* [data-testid="collapsedControl"] {
-            background-color: var(--nihr-navy) !important;
-            color: white !important;
-            border-radius: 0 4px 4px 0 !important;
+        /* ── Sidebar (minimal styling, sidebar not used for navigation) ── */
+        [data-testid="stSidebar"] {
+            background: var(--nihr-white) !important;
         }
-        [data-testid="collapsedControl"] svg {
-            fill: white !important;
-            stroke: white !important;
-        } */
-
-        /* ── Sidebar ── */
-        /* [data-testid="stSidebar"] {
-            background: var(--nihr-navy) !important;
-        }
-        [data-testid="stSidebar"] * {
-            color: #ffffff !important;
-        }
-        [data-testid="stSidebar"] .stRadio label {
-            color: #d0e4f7 !important;
-        }
-        [data-testid="stSidebar"] hr {
-            border-color: #1a4a7a !important;
-        } */
 
         /* ── Multiselect tags ── */
         [data-testid="stMultiSelect"] [data-baseweb="tag"] {
@@ -469,6 +449,18 @@ def load_data():
         if diabetes_data is not None:
             diabetes_data['practice_code_gp'] = diabetes_data['GP code']
 
+        # Load age/sex cohorts for PIC Finder cohort filtering
+        cohort_file = data_dir / "gp_age_sex_cohorts_long.csv"
+        gp_age_sex_cohorts = pd.read_csv(cohort_file) if cohort_file.exists() else None
+        if gp_age_sex_cohorts is not None:
+            gp_age_sex_cohorts['practice_code_gp'] = gp_age_sex_cohorts['practice_code_gp'].astype(str).str.strip().str.upper()
+            gp_age_sex_cohorts['SEX'] = gp_age_sex_cohorts['SEX'].astype(str).str.strip().str.upper()
+            gp_age_sex_cohorts['AGE_GROUP_5'] = gp_age_sex_cohorts['AGE_GROUP_5'].astype(str).str.strip().str.upper()
+            gp_age_sex_cohorts['cohort_population'] = pd.to_numeric(
+                gp_age_sex_cohorts['cohort_population'],
+                errors='coerce'
+            ).fillna(0)
+
         return {
             'gp': gp_data,
             'hospitals': hospital_data,
@@ -476,6 +468,7 @@ def load_data():
             'travel_times': travel_times,
             'dementia': dementia_data,
             'diabetes': diabetes_data,
+            'gp_age_sex_cohorts': gp_age_sex_cohorts,
             'msoa_geojson': msoa_geojson,
             'icb_geojsons': icb_geojsons,
         }
@@ -490,6 +483,59 @@ def get_hospital_list(hospitals_df):
     if hospitals_df is not None and 'hospital_name' in hospitals_df.columns:
         return sorted(hospitals_df['hospital_name'].unique().tolist())
     return []
+
+
+def age_band_sort_key(age_band):
+    """Sort 5-year age bands numerically, with 95+ at the end."""
+    age_band = str(age_band).strip().upper()
+    if age_band.endswith('+'):
+        return (999, age_band)
+    if '_' in age_band:
+        head = age_band.split('_', 1)[0]
+        if head.isdigit():
+            return (int(head), age_band)
+    return (998, age_band)
+
+
+def age_band_lower_bound(age_band):
+    """Return the lower bound for a 5-year age band as an integer."""
+    age_band = str(age_band).strip().upper()
+    if age_band.endswith('+'):
+        return int(age_band[:-1]) if age_band[:-1].isdigit() else 95
+    if '_' in age_band:
+        head = age_band.split('_', 1)[0]
+        if head.isdigit():
+            return int(head)
+    return 0
+
+
+def age_band_upper_bound(age_band):
+    """Return the upper bound for a 5-year age band as an integer."""
+    age_band = str(age_band).strip().upper()
+    if age_band.endswith('+'):
+        return 99
+    if '_' in age_band:
+        head = age_band.split('_', 1)[0]
+        if head.isdigit():
+            return int(head) + 4
+    return 4
+
+
+def age_band_range_to_values(age_options, age_start, age_end):
+    """Return the age bands fully covered by the selected ceiling range."""
+    if not age_options:
+        return []
+
+    lower_start = min(age_start, age_end)
+    upper_end = max(age_start, age_end)
+
+    selected_bands = []
+    for age_band in age_options:
+        band_start = age_band_lower_bound(age_band)
+        if band_start >= lower_start and band_start < upper_end:
+            selected_bands.append(age_band)
+
+    return selected_bands
 
 
 MSOA_OVERLAY_METRICS = {
@@ -714,60 +760,37 @@ def main():
         - `hospital_sites_geocoded.csv`
         - `travel_times_optimized.csv` (optional)
         - `dementia_by_practice.csv` (optional)
+        - `gp_age_sex_cohorts_long.csv` (optional, for cohort filters)
         """)
         return
     
     # ========================================================================
-    # SIDEBAR CONTROLS
+    # PAGE NAVIGATION
     # ========================================================================
-    
-    with st.sidebar:
-        st.header("🎛️ Controls & Filters")
-        
-        st.markdown("---")
-        
-        # Navigation
-        app_mode = st.radio(
-            "Select View:",
-            ["📍 Interactive Map", "🌍 Disease Map", "📊 Data Explorer", "ℹ️ About", "📚 Sources", "♿ Accessibility"],
-            help="Choose what you'd like to explore"
-        )
-        
-        st.markdown("---")
-        
-        # ===== SIDEBAR: OVERLAY SETTINGS =====
-        if app_mode == "🌍 Disease Map":
-            st.subheader("Overlay Settings")
-            show_msoa_overlay = st.checkbox("Show MSOA Overlay", value=True)
-            msoa_metric_label = st.selectbox(
-                "Overlay Metric:",
-                list(MSOA_OVERLAY_METRICS.keys()),
-                disabled=not show_msoa_overlay,
-            )
-            msoa_metric = MSOA_OVERLAY_METRICS[msoa_metric_label]
-        else:
-            show_msoa_overlay = False
-            msoa_metric = "density_65plus"
-
-        st.markdown("---")
-        
-        # Project Info
-        st.subheader("ℹ️ Project Info")
         st.info("""
-        **NIHR PIC South London**
-        
-        Identifying potential Participation Identification Centres to increase research inclusion.
-        
-        📊 **Coverage:** South East & South West London ICB
-        🏥 **Hospitals:** 18 sites across 11 Trusts
-        🏘️ **GP Practices:** 327 practices
+        **Expected files:**
+        - `gp_practices_geocoded.csv`
+        - `hospital_sites_geocoded.csv`
+        - `travel_times_optimized.csv` (optional)
+        - `dementia_by_practice.csv` (optional)
+        - `gp_age_sex_cohorts_long.csv` (optional, for cohort filters)
         """)
+        return
+    
+    # Create main navigation tabs
+    tab_map, tab_disease, tab_explorer, tab_about, tab_sources = st.tabs([
+        "📍 Interactive Map",
+        "🌍 Disease Map",
+        "📊 Data Explorer",
+        "ℹ️ About",
+        "📚 Sources"
+    ])
     
     # ========================================================================
-    # PAGE CONTENT
+    # TAB 1: INTERACTIVE MAP
     # ========================================================================
     
-    if app_mode == "📍 Interactive Map":
+    with tab_map:
         
         # Get data for hospital/ICB lookups
         hospital_list = sorted(data['travel_times']['hospital_name'].unique().tolist()) if data['travel_times'] is not None else []
@@ -915,6 +938,41 @@ def main():
             elif disease_type == "🩺 Diabetes":
                 diabetes_subtype = st.radio("Type:", ["Type 1", "Type 2", "Total"], horizontal=True, label_visibility="collapsed")
 
+            # Cohort filters (always applied in PIC Finder)
+            st.markdown("**Cohort**")
+            cohort_df = data.get('gp_age_sex_cohorts')
+            selected_sexes = []
+            selected_age_bands = []
+
+            if cohort_df is not None and len(cohort_df) > 0:
+                sex_options = sorted(cohort_df['SEX'].dropna().unique().tolist())
+                age_options = sorted(cohort_df['AGE_GROUP_5'].dropna().unique().tolist(), key=age_band_sort_key)
+
+                default_sexes = [x for x in ['FEMALE', 'MALE'] if x in sex_options] or sex_options
+
+                selected_sexes = st.multiselect(
+                    "Sex:",
+                    options=sex_options,
+                    default=default_sexes,
+                    label_visibility="collapsed",
+                )
+                age_start, age_end = st.slider(
+                    "Age range:",
+                    min_value=0,
+                    max_value=100,
+                    value=(0, 100),
+                    step=5,
+                    label_visibility="collapsed",
+                    key="pic_age_range_slider",
+                )
+
+                selected_age_bands = age_band_range_to_values(age_options, age_start, age_end)
+                display_upper = "95+" if age_end >= 100 else str(age_end - 1)
+                st.caption(f"Age range: {age_start} to {display_upper}")
+                st.caption("Cohort filters are always applied before disease and travel ranking.")
+            else:
+                st.caption("Cohort data unavailable. Run pipeline/06_prepare_gp_age_sex_cohorts.py.")
+
             # Ranking
             st.markdown("**Ranking**")
             if disease_type == "None":
@@ -945,16 +1003,39 @@ def main():
                     st.session_state.pop('pic_results_df', None)
                     st.session_state.pop('pic_highlighted_codes', None)
                     st.session_state.pop('pic_disease_col', None)
+                    st.session_state.pop('pic_prevalence_col', None)
+                    st.session_state.pop('pic_diabetes_proxy_mode', None)
         
         # ===== PERFORM SEARCH =====
         if pic_search_button:
             gp_df = gp_icb_filtered
             dementia_df = data['dementia']
             diabetes_df = data['diabetes']
+            cohort_df = data.get('gp_age_sex_cohorts')
             travel_times_df = data['travel_times']
             
             results = gp_df.copy()
             disease_col_name = None
+            st.session_state['pic_prevalence_col'] = None
+            st.session_state['pic_diabetes_proxy_mode'] = False
+
+            # Always apply cohort filter first.
+            if cohort_df is not None and len(cohort_df) > 0 and selected_sexes and selected_age_bands:
+                cohort_filtered = cohort_df[
+                    cohort_df['SEX'].isin(selected_sexes) &
+                    cohort_df['AGE_GROUP_5'].isin(selected_age_bands)
+                ].copy()
+
+                cohort_by_practice = (
+                    cohort_filtered.groupby('practice_code_gp', as_index=False)['cohort_population']
+                    .sum()
+                    .rename(columns={'cohort_population': 'selected_cohort_population'})
+                )
+
+                results = results.merge(cohort_by_practice, on='practice_code_gp', how='inner')
+                results = results[results['selected_cohort_population'] > 0]
+            else:
+                results = pd.DataFrame()
             
             # Filter by disease prevalence
             if disease_type == "🧠 Dementia" and dementia_df is not None:
@@ -989,8 +1070,14 @@ def main():
                 
                 diabetes_filtered = diabetes_df[['practice_code_gp', diabetes_col, prevalence_col, 'TOTAL_POPULATION']].copy()
                 results = results.merge(diabetes_filtered, on='practice_code_gp', how='inner')
-                disease_col_name = diabetes_col
+                results[prevalence_col] = pd.to_numeric(results[prevalence_col], errors='coerce').fillna(0)
+                results['DIABETES_EXPECTED_COHORT_CASES'] = (
+                    pd.to_numeric(results['selected_cohort_population'], errors='coerce').fillna(0) *
+                    results[prevalence_col] / 100
+                )
+                disease_col_name = 'DIABETES_EXPECTED_COHORT_CASES'
                 st.session_state['pic_prevalence_col'] = prevalence_col
+                st.session_state['pic_diabetes_proxy_mode'] = True
                 # Exclude practices with zero disease count when disease ranking is active
                 if disease_weight_norm > 0:
                     results = results[results[disease_col_name] > 0]
@@ -1061,6 +1148,7 @@ def main():
         pic_results_df = st.session_state.get('pic_results_df', None)
         disease_col_name = st.session_state.get('pic_disease_col', None)
         prevalence_col_name = st.session_state.get('pic_prevalence_col', None)
+        diabetes_proxy_mode = st.session_state.get('pic_diabetes_proxy_mode', False)
         
         # ========== RIGHT COLUMN: MAP AND RESULTS ==========
         with right_col:
@@ -1082,12 +1170,22 @@ def main():
 
             # If results exist, show toggle; otherwise just map
             if pic_results_df is not None and len(pic_results_df) > 0:
+                if diabetes_proxy_mode:
+                    st.warning(
+                        "Diabetes cohort ranking is a proxy estimate: Expected Cohort Cases = "
+                        "Selected Cohort Population x Practice Diabetes Prevalence (%) / 100. "
+                        "This assumes uniform prevalence across age/sex groups within each practice "
+                        "and may not reflect true subgroup burden."
+                    )
+
                 # Build display dataframe
                 display_cols = ['practice_name', 'postcode']
                 if disease_col_name is not None:
                     display_cols.append(disease_col_name)
                 if prevalence_col_name is not None:
                     display_cols.append(prevalence_col_name)
+                if 'selected_cohort_population' in pic_results_df.columns:
+                    display_cols.append('selected_cohort_population')
                 if 'TOTAL_POPULATION' in pic_results_df.columns:
                     display_cols.append('TOTAL_POPULATION')
                 if 'best_travel_time' in pic_results_df.columns:
@@ -1098,6 +1196,7 @@ def main():
                     'practice_name': 'Practice',
                     'postcode': 'Postcode',
                     'best_travel_time': 'Travel (min)',
+                    'selected_cohort_population': 'Selected Cohort Pop',
                     'TOTAL_POPULATION': 'Population',
                 }
                 if disease_col_name is not None:
@@ -1113,6 +1212,8 @@ def main():
                         rename_map[disease_col_name] = 'Type 2 Cases'
                     elif disease_col_name == 'diabetes_total_count':
                         rename_map[disease_col_name] = 'Total Cases'
+                    elif disease_col_name == 'DIABETES_EXPECTED_COHORT_CASES':
+                        rename_map[disease_col_name] = 'Expected Diabetes Cases (proxy)'
                 if prevalence_col_name is not None:
                     if 'DEMENTIA' in prevalence_col_name:
                         rename_map[prevalence_col_name] = 'Prevalence (%)'
@@ -1140,8 +1241,10 @@ def main():
                     # Format numeric columns for readability
                     df_display = display_df.copy()
                     for col in df_display.columns:
-                        if 'Prevalence' in col or 'Population' in col:
-                            if col != 'Population':
+                        if 'Expected Diabetes Cases' in col:
+                            df_display[col] = df_display[col].apply(lambda x: f"{x:.1f}" if pd.notna(x) else "N/A")
+                        elif 'Prevalence' in col or 'Population' in col:
+                            if col not in ['Population', 'Selected Cohort Pop']:
                                 df_display[col] = df_display[col].apply(lambda x: f"{x:.2f}" if pd.notna(x) else "N/A")
                             else:
                                 df_display[col] = df_display[col].apply(lambda x: f"{int(x):,}" if pd.notna(x) else "N/A")
@@ -1159,21 +1262,35 @@ def main():
             else:
                 # No search yet — show full-height map
                 st_folium(map_obj, width="100%")
-        
     
-    elif app_mode == "🌍 Disease Map":
+    # ========================================================================
+    # TAB 2: DISEASE MAP
+    # ========================================================================
+    
+    with tab_disease:
         st.markdown("## Disease prevalence map")
         st.caption("MSOA-level disease overlay across South London.")
         st.markdown("---")
         
-        # Map display toggles at top
-        map_toggle_col1, map_toggle_col2, map_toggle_col3 = st.columns(3)
-        with map_toggle_col1:
-            show_msoa_overlay = st.checkbox("Show MSOA Overlay", value=show_msoa_overlay, key="disease_msoa")
-        with map_toggle_col2:
-            show_gp_practices = st.checkbox("Show GP Practices", value=True, key="disease_show_gp")
-        with map_toggle_col3:
-            show_hospitals = st.checkbox("Show Hospital Sites", value=True, key="disease_show_hospitals")
+        # Overlay settings for this tab
+        settings_col1, settings_col2, settings_col3 = st.columns(3)
+        with settings_col1:
+            show_msoa_overlay = st.checkbox("Show MSOA Overlay", value=True, key="disease_msoa_toggle")
+        with settings_col2:
+            show_gp_practices = st.checkbox("Show GP Practices", value=True, key="disease_show_gp_toggle")
+        with settings_col3:
+            show_hospitals = st.checkbox("Show Hospital Sites", value=True, key="disease_show_hospitals_toggle")
+        
+        st.markdown("---")
+        
+        # Metric selector
+        msoa_metric_label = st.selectbox(
+            "Overlay Metric:",
+            list(MSOA_OVERLAY_METRICS.keys()),
+            disabled=not show_msoa_overlay,
+            key="disease_metric_selector"
+        )
+        msoa_metric = MSOA_OVERLAY_METRICS[msoa_metric_label]
         
         st.markdown("---")
 
@@ -1191,42 +1308,168 @@ def main():
         )
         st_folium(disease_map, width="100%")
 
-        with st.expander("ℹ️ Map Legend"):
-            st.write("""
-            - **Colour shading**: MSOA-level disease prevalence — darker = higher
-            - **Blue circles**: GP Practices
-            - **Red markers**: NHS Hospital Sites
-            """)
+        st.markdown("#### Map Legend")
+        st.markdown("""
+        - **Colour shading**: MSOA-level disease prevalence — darker = higher
+        - **Blue circles**: GP Practices
+        - **Red markers**: NHS Hospital Sites
+        """)
+    
+    # ========================================================================
+    # TAB 3: DATA EXPLORER
+    # ========================================================================
 
-    elif app_mode == "📊 Data Explorer":
+    with tab_explorer:
         st.markdown("## Data explorer")
+        st.caption("Tables below are sortable (click column headers), searchable, and filterable. Use the filters below each table to narrow results.")
         
         tab1, tab2, tab3 = st.tabs(["GP Practices", "Hospital Sites", "Travel Times"])
         
         with tab1:
             st.markdown("### GP practices dataset")
             if data['gp'] is not None:
-                st.write(f"**Total Records:** {len(data['gp'])}")
-                st.dataframe(data['gp'].head(10), width="stretch")
+                gp_df_display = data['gp'].copy()
+                st.write(f"**Total Records:** {len(gp_df_display)}")
                 
-                with st.expander("📊 Column Information"):
-                    st.write(data['gp'].info())
+                # Filters
+                filter_col1, filter_col2 = st.columns(2)
+                with filter_col1:
+                    icb_filter = st.multiselect(
+                        "Filter by ICB:",
+                        options=sorted(gp_df_display['icb_name'].unique()) if 'icb_name' in gp_df_display.columns else [],
+                        key="gp_icb_filter"
+                    )
+                with filter_col2:
+                    if 'TOTAL_POPULATION' in gp_df_display.columns:
+                        pop_min = int(gp_df_display['TOTAL_POPULATION'].min())
+                        pop_max = int(gp_df_display['TOTAL_POPULATION'].max())
+                        pop_range = st.slider(
+                            "Filter by practice population:",
+                            min_value=pop_min,
+                            max_value=pop_max,
+                            value=(pop_min, pop_max),
+                            key="gp_pop_filter"
+                        )
+                    else:
+                        pop_range = None
+                
+                # Apply filters
+                if icb_filter:
+                    gp_df_display = gp_df_display[gp_df_display['icb_name'].isin(icb_filter)]
+                if pop_range is not None:
+                    gp_df_display = gp_df_display[
+                        (gp_df_display['TOTAL_POPULATION'] >= pop_range[0]) &
+                        (gp_df_display['TOTAL_POPULATION'] <= pop_range[1])
+                    ]
+                
+                st.caption(f"Showing {len(gp_df_display)} of {len(data['gp'])} records")
+                st.dataframe(gp_df_display, width="stretch", use_container_width=True, height=600)
+                st.caption("For more information about data sources, see the **📚 Sources** tab in the sidebar.")
         
         with tab2:
             st.markdown("### Hospital sites dataset")
             if data['hospitals'] is not None:
-                st.write(f"**Total Records:** {len(data['hospitals'])}")
-                st.dataframe(data['hospitals'].head(10), width="stretch")
+                hosp_df_display = data['hospitals'].copy()
+                st.write(f"**Total Records:** {len(hosp_df_display)}")
+                
+                # Filters
+                filter_col1, filter_col2 = st.columns(2)
+                with filter_col1:
+                    if 'trust' in hosp_df_display.columns:
+                        trust_filter = st.multiselect(
+                            "Filter by Trust:",
+                            options=sorted(hosp_df_display['trust'].unique()),
+                            key="hosp_trust_filter"
+                        )
+                    else:
+                        trust_filter = []
+                with filter_col2:
+                    if 'icb' in hosp_df_display.columns:
+                        icb_filter = st.multiselect(
+                            "Filter by ICB:",
+                            options=sorted(hosp_df_display['icb'].unique()),
+                            key="hosp_icb_filter"
+                        )
+                    else:
+                        icb_filter = []
+                
+                # Apply filters
+                if trust_filter:
+                    hosp_df_display = hosp_df_display[hosp_df_display['trust'].isin(trust_filter)]
+                if icb_filter:
+                    hosp_df_display = hosp_df_display[hosp_df_display['icb'].isin(icb_filter)]
+                
+                st.caption(f"Showing {len(hosp_df_display)} of {len(data['hospitals'])} records")
+                st.dataframe(hosp_df_display, width="stretch", use_container_width=True, height=600)
         
         with tab3:
             st.markdown("### Travel times data")
             if data['travel_times'] is not None:
-                st.write(f"**Total Records:** {len(data['travel_times'])}")
-                st.dataframe(data['travel_times'].head(10), width="stretch")
+                travel_df_display = data['travel_times'].copy()
+                st.write(f"**Total Records:** {len(travel_df_display)}")
+                
+                # Filters
+                filter_col1, filter_col2, filter_col3 = st.columns(3)
+                with filter_col1:
+                    if 'hospital_name' in travel_df_display.columns:
+                        hospital_filter = st.multiselect(
+                            "Filter by Hospital:",
+                            options=sorted(travel_df_display['hospital_name'].unique()),
+                            key="travel_hosp_filter"
+                        )
+                    else:
+                        hospital_filter = []
+                with filter_col2:
+                    if 'travel_time_transit_minutes' in travel_df_display.columns:
+                        transit_min = int(travel_df_display['travel_time_transit_minutes'].min())
+                        transit_max = int(travel_df_display['travel_time_transit_minutes'].max())
+                        transit_range = st.slider(
+                            "Transit time (min):",
+                            min_value=transit_min,
+                            max_value=transit_max,
+                            value=(transit_min, transit_max),
+                            key="travel_transit_filter"
+                        )
+                    else:
+                        transit_range = None
+                with filter_col3:
+                    if 'travel_time_walking_minutes' in travel_df_display.columns:
+                        walk_min = int(travel_df_display['travel_time_walking_minutes'].min())
+                        walk_max = int(travel_df_display['travel_time_walking_minutes'].max())
+                        walk_range = st.slider(
+                            "Walking time (min):",
+                            min_value=walk_min,
+                            max_value=walk_max,
+                            value=(walk_min, walk_max),
+                            key="travel_walk_filter"
+                        )
+                    else:
+                        walk_range = None
+                
+                # Apply filters
+                if hospital_filter:
+                    travel_df_display = travel_df_display[travel_df_display['hospital_name'].isin(hospital_filter)]
+                if transit_range is not None:
+                    travel_df_display = travel_df_display[
+                        (travel_df_display['travel_time_transit_minutes'] >= transit_range[0]) &
+                        (travel_df_display['travel_time_transit_minutes'] <= transit_range[1])
+                    ]
+                if walk_range is not None:
+                    travel_df_display = travel_df_display[
+                        (travel_df_display['travel_time_walking_minutes'] >= walk_range[0]) &
+                        (travel_df_display['travel_time_walking_minutes'] <= walk_range[1])
+                    ]
+                
+                st.caption(f"Showing {len(travel_df_display)} of {len(data['travel_times'])} records")
+                st.dataframe(travel_df_display, width="stretch", use_container_width=True, height=600)
             else:
                 st.info("Travel times data not yet generated. This will be computed in the April processing phase.")
     
-    elif app_mode == "ℹ️ About":
+    # ========================================================================
+    # TAB 4: ABOUT
+    # ========================================================================
+    
+    with tab_about:
         st.markdown("## About this tool")
         
         st.markdown("""
@@ -1241,31 +1484,18 @@ def main():
         - **Demographic Overlays**: Understand patient populations through age, ethnicity, and deprivation data
         - **Disease Prevalence**: Identify practices serving populations with specific conditions
         - **Dynamic PIC Finder**: Search for GPs matching specific study criteria
-        
-        #### Data sources
-        All data is **publicly available** from:
-        - **NHS Organisation Data Services (ODS)**: GP practice and hospital locations — [ods.nhs.uk](https://odsportal.nhsdigital.nhs.uk/)
-        - **ONS Open Geography Portal**: LSOA/MSOA boundaries and demographics
-        - **NHS Digital — Primary Care Dementia Data (March 2024)**: Practice-level dementia register counts — [digital.nhs.uk](https://digital.nhs.uk/data-and-information/publications/statistical/primary-care-dementia-data/march-2024)
-        - **OHID Fingertips — Dementia Profile**: Population-level dementia prevalence indicators — [fingertips.phe.org.uk](https://fingertips.phe.org.uk/profile/dementia)
-        - **ICB Boundaries — South East London (QKK)**: MaPit area 168382 — [mapit.mysociety.org](https://mapit.mysociety.org/area/168382.html)
-        - **ICB Boundaries — South West London (QWE)**: MaPit area 168269 — [mapit.mysociety.org](https://mapit.mysociety.org/area/168269.html)
-        - **GP Surgery Locations**: OpenStreetMap via Overpass Turbo — [overpass-turbo.eu](https://overpass-turbo.eu/)
+
+                #### PIC Finder cohort methodology
+                - **Cohort filters (always on)**: PIC Finder first filters practices by selected gender and 5-year age bands.
+                - **Dementia ranking**: Uses observed dementia counts and prevalence fields from validated dementia data.
+                - **Diabetes ranking**: Uses a proxy estimate for selected subgroup burden:
+                    - Expected Cohort Diabetes Cases = Selected Cohort Population x Practice Diabetes Prevalence (%) / 100
+                - **Important assumption for diabetes**: This proxy assumes diabetes prevalence is uniformly distributed across age and sex groups within each practice. This may be incorrect and should be interpreted as an estimate for prioritization, not a measured subgroup count.
         
         #### Coverage
         - **Geography**: South East London ICB (QKK) & South West London ICB (QWE)
         - **GP Practices**: 327 practices across both ICBs
         - **Hospital Sites**: 18 sites across 11 NHS Trusts
-        
-        #### Limitations
-        - Population demographics are based on LSOA (Lower Layer Super Output Area) where the practice is located, not exact patient registrations
-        - Travel times are pre-computed snapshots and don't account for real-time traffic
-        - University areas may show higher young adult populations that aren't permanent residents
-        
-        #### Project status
-        - ✅ March 2026: Data acquisition complete
-        - 🔄 April 2026: Data cleaning and geocoding
-        - 📈 May 2026: Interactive features and analysis tools
         """)
         
         st.divider()
@@ -1276,13 +1506,17 @@ def main():
         For questions or feedback, please contact the South London Regional Research Delivery Network.
         """)
     
-    elif app_mode == "📚 Sources":
+    # ========================================================================
+    # TAB 5: SOURCES
+    # ========================================================================
+    
+    with tab_sources:
         st.markdown("## Data sources")
         
         st.markdown("""
         ### Overview
         
-        This tool integrates publicly available data from multiple NHS and government sources. All data is open access and updated regularly.
+        This tool integrates publicly available data from multiple NHS and government sources.
         
         ---
         
@@ -1375,17 +1609,9 @@ def main():
         ### Data Quality & Limitations
         
         #### Known Limitations
-        - **Practice demographics:** Based on LSOA where practice is located, not actual patient population
-        - **University areas:** May show higher young adult populations that aren't permanent residents
         - **Travel times:** Pre-computed snapshots, don't reflect real-time congestion
         - **MSOA overlay:** Aggregated across multiple practices, may mask local variation
         - **Missing data:** Some practices may lack complete data across all metrics
-        
-        #### Data Validation
-        - ✓ Dementia data validated against NHS Digital QA reports
-        - ✓ Geocoding validated with independent sources (Google Maps, Apple Maps)
-        - ✓ Travel times spot-checked against TfL Journey Planner
-        - ✓ Hospital list cross-checked with NHS Trust websites
         
         ---
         
@@ -1416,95 +1642,6 @@ def main():
         ### Contact & Feedback
         
         Questions about data sources? Contact the South London Regional Research Delivery Network.
-        """)
-    
-    elif app_mode == "♿ Accessibility":
-        st.markdown("## Accessibility statement")
-        
-        st.markdown("""
-        ### Commitment to accessibility
-        
-        This NIHR PIC Mapping Tool is designed and built with accessibility in mind. We aim to provide an inclusive experience for all users, including those using assistive technologies.
-        
-        #### Accessibility standards
-        
-        We are working toward **WCAG 2.2 Level AA compliance** (Web Content Accessibility Guidelines). This means:
-        
-        - **Color contrast**: All text has a contrast ratio of at least 4.5:1 for normal text
-        - **Focus indicators**: Keyboard users can see which element has focus (yellow outline)
-        - **Keyboard navigation**: All functionality is available via keyboard (Tab, Enter, Space, Escape)
-        - **Screen reader support**: Content is structured with proper headings, labels, and ARIA attributes
-        - **Resizable text**: You can zoom up to 200% without content breaking
-        - **Clear language**: We use plain English and avoid jargon where possible
-        
-        #### Keyboard shortcuts
-        
-        **Navigation**
-        - **Tab**: Move forward through controls
-        - **Shift + Tab**: Move backward through controls  
-        - **Enter**: Activate buttons or submit forms
-        - **Space**: Check/uncheck boxes or toggle radio buttons
-        - **Arrow keys**: Navigate radio buttons or adjust sliders
-        - **Escape**: Close dropdowns or dialogs
-        
-        **On the map**
-        - **Mouse or touchpad**: Pan the map
-        - **Scroll wheel**: Zoom in/out
-        - **Click markers**: View practice or hospital details
-        
-        #### Assistive technology support
-        
-        This tool has been tested with:
-        - Screen readers: NVDA (Windows), VoiceOver (macOS/iOS)
-        - Magnification software: ZoomText, built-in OS zoom
-        - Voice control: Windows Speech Recognition, macOS Voice Control
-        - Switch access: Keyboard-only navigation
-        
-        #### Known limitations
-        
-        - **Interactive maps**: Folium maps have limited keyboard support. Use arrow keys to navigate or click directly on markers
-        - **Data tables**: Large data tables may require horizontal scrolling on small screens
-        - **Third-party content**: Some linked websites may not meet WCAG AA standards
-        
-        #### Accessibility features by page
-        
-        **Interactive Map (PIC Finder)**
-        - Map markers have descriptive tooltips
-        - Results table has proper column headers
-        - Search results downloadable as CSV
-        - Text-based legend describes symbols
-        
-        **Disease Map**
-        - Choropleth overlay uses color combined with numeric data
-        - Legend explains disease prevalence scale
-        
-        **Data Explorer**
-        - Tables organized in tabs for easier navigation
-        - Column headers properly marked
-        - Data scannable with screen readers
-        
-        **All Pages**
-        - Proper heading hierarchy (H2 sections, H3 subsections)
-        - Descriptive link text (not \"click here\")
-        - Information organized for easy scanning
-        
-        #### Request accessibility support
-        
-        If you encounter accessibility issues, please contact:
-        
-        📧 **Email**: research@example.nhs.uk  
-        🕐 **Response time**: Within 5 working days
-        
-        Please include:
-        - Browser and operating system
-        - Page and feature with the issue
-        - Your assistive technology (if any)
-        - What you expected vs. what happened
-        
-        ---
-        
-        **Last updated**: May 2026  
-        **Next review**: August 2026
         """)
 
 
