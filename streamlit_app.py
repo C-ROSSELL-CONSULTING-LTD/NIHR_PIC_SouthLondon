@@ -386,6 +386,12 @@ def load_data():
         hospital_data = pd.read_csv(data_dir / "hospital_sites_geocoded.csv")
         msoa_dementia = pd.read_csv(data_dir / "msoa_dementia_summary.csv")
 
+        # Normalize optional IMD enrichment fields when present.
+        if 'imd_score_raw' in gp_data.columns:
+            gp_data['imd_score_raw'] = pd.to_numeric(gp_data['imd_score_raw'], errors='coerce')
+        if 'imd_time_period' in gp_data.columns:
+            gp_data['imd_time_period'] = gp_data['imd_time_period'].astype(str).replace('nan', pd.NA)
+
         travel_times_file = data_dir / "travel_times_optimized.csv"
         travel_times = pd.read_csv(travel_times_file) if travel_times_file.exists() else None
 
@@ -669,6 +675,8 @@ def create_map(
                     f"Postcode: {row.get('postcode', 'N/A')}<br>"
                     f"ICS: {row.get('icb_name', 'N/A')}"
                 )
+                if pd.notna(row.get('imd_score_raw')):
+                    popup_text += f"<br>IMD score (raw): {float(row.get('imd_score_raw')):.3f}"
                 
                 # Highlight practices in search results (GDS colors)
                 is_highlighted = row.get('practice_code_gp') in highlighted_practices
@@ -900,6 +908,45 @@ def main():
                     st.caption("GP size data unavailable for selected scope")
             else:
                 st.caption("GP size data unavailable for selected scope")
+
+            # IMD raw score filter
+            st.markdown("**IMD (Raw Score)**")
+            if 'imd_score_raw' in gp_icb_filtered.columns:
+                imd_series = pd.to_numeric(gp_icb_filtered['imd_score_raw'], errors='coerce')
+                if imd_series.notna().any():
+                    imd_min_bound = float(imd_series.min())
+                    imd_max_bound = float(imd_series.max())
+                    imd_range = st.slider(
+                        "IMD score range:",
+                        min_value=float(round(imd_min_bound, 3)),
+                        max_value=float(round(imd_max_bound, 3)),
+                        value=(float(round(imd_min_bound, 3)), float(round(imd_max_bound, 3))),
+                        step=0.001,
+                        key="pic_imd_range",
+                        label_visibility="collapsed",
+                    )
+                    include_imd_unmatched = st.checkbox(
+                        "Include practices without IMD score",
+                        value=True,
+                        key="pic_include_imd_unmatched",
+                    )
+
+                    if include_imd_unmatched:
+                        gp_icb_filtered = gp_icb_filtered[
+                            imd_series.isna() |
+                            ((imd_series >= imd_range[0]) & (imd_series <= imd_range[1]))
+                        ].copy()
+                    else:
+                        gp_icb_filtered = gp_icb_filtered[
+                            (imd_series >= imd_range[0]) & (imd_series <= imd_range[1])
+                        ].copy()
+
+                    matched_count = pd.to_numeric(gp_icb_filtered.get('imd_score_raw'), errors='coerce').notna().sum()
+                    st.caption(f"IMD filter retained: {len(gp_icb_filtered)} practices ({matched_count} with IMD)")
+                else:
+                    st.caption("IMD score unavailable for selected practices")
+            else:
+                st.caption("IMD score column not found. Run pipeline/04b_enrich_imd_raw.py.")
 
             hosp_scope = st.radio("Level:", ["Hospital", "Trust"], horizontal=True)
             if hosp_scope == "Trust":
@@ -1184,6 +1231,8 @@ def main():
                     display_cols.append(disease_col_name)
                 if prevalence_col_name is not None:
                     display_cols.append(prevalence_col_name)
+                if 'imd_score_raw' in pic_results_df.columns:
+                    display_cols.append('imd_score_raw')
                 if 'selected_cohort_population' in pic_results_df.columns:
                     display_cols.append('selected_cohort_population')
                 if 'TOTAL_POPULATION' in pic_results_df.columns:
@@ -1198,6 +1247,7 @@ def main():
                     'best_travel_time': 'Travel (min)',
                     'selected_cohort_population': 'Selected Cohort Pop',
                     'TOTAL_POPULATION': 'Population',
+                    'imd_score_raw': 'IMD score (raw)',
                 }
                 if disease_col_name is not None:
                     if disease_col_name == 'DEMENTIA_REGISTER_65_PLUS':

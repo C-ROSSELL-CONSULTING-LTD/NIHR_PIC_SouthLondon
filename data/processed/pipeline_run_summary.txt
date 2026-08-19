@@ -1,0 +1,569 @@
+===== RUNNING pipeline/00_etl_analysis.py =====
+
+================================================================================
+  NIHR PIC SOUTH LONDON - ETL DATA EXPLORATION & ANALYSIS
+================================================================================
+
+
+================================================================================
+  STEP 1: LOAD RAW DATASETS
+================================================================================
+
+  [DATA] Source directory : /workspaces/NIHR_PIC_SouthLondon/data/raw
+  [DATA] Dementia metrics : pcdem-prac-ass-plans-feb-2026.csv  (Feb 2026)
+  [DATA] GP registry      : gp-reg-pat-prac-map-03-2026.csv   (Mar 2026)
+
+  [OK]   Loading dementia_metrics ...
+         Rows    : 957,876
+         Columns : 16
+         Memory  : 315.18 MB
+
+  [OK]   Loading gp_registry ...
+         Rows    : 6,169
+         Columns : 17
+         Memory  : 2.10 MB
+
+
+================================================================================
+  STEP 2: RAW DATA QUALITY ASSESSMENT
+================================================================================
+
+  Dataset : DEMENTIA_METRICS
+  ----------------------------------------------------------------------
+  Rows            : 957,876
+  Columns         : 16
+  Duplicate rows  : 0
+  Missing cells   : 0  (0.00%)
+
+  Dataset : GP_REGISTRY
+  ----------------------------------------------------------------------
+  Rows            : 6,169
+  Columns         : 17
+  Duplicate rows  : 0
+  Missing cells   : 0  (0.00%)
+
+
+================================================================================
+  STEP 3: DATA CLEANING & PREPROCESSING
+================================================================================
+
+  [CLEAN] Dementia Metrics  (pcdem-prac-ass-plans-feb-2026.csv)
+  [PIVOT] Converting from long to wide format...
+  Data format: LONG (Measure=12 unique, rows=957876)
+  Unique measures: ['ASS_Declined_GP_Mem_Ass', 'ASS_Declined_GP_Mem_Clinic', 'ASS_Received_GP', 'ASS_Received_GP_Mem_Ass', 'ASS_Received_GP_Mem_Clinic', 'DEMENTIA_REGISTER_0_64', 'DEMENTIA_REGISTER_65_PLUS', 'DIAG_Declined_Care_Plan', 'DIAG_Received_Care_Plan', 'DIAG_Received_Med_Rev']
+  After pivot: 6170 practices × 18 columns
+  Raw rows (input)         : 957,876
+  Unique practices (output): 6,170
+
+  [CLEAN] GP Registry  (gp-reg-pat-prac-map-03-2026.csv)
+  Removed (no postcode) : 0
+  Rows kept             : 6,169
+
+  [FILTER] South London ICB codes : ['QKK', 'QWE']
+  South London GP practices (registry) : 363
+
+
+================================================================================
+  STEP 4: MERGE DATASETS  (2-level ODS code strategy)
+================================================================================
+
+  Merge keys:
+    PCN_ODS_CODE (DEM) <-> PCN_CODE (GP registry) : authoritative NHS identifier
+    PRACTICE_NAME                                  : unique within PCN
+
+  South London practices matched        : 327
+  With postcode                         : 327 / 327  (100.0%)
+  Missing postcode                      : 0
+
+
+================================================================================
+  STEP 5: BEFORE & AFTER TRANSFORMATION SUMMARY
+================================================================================
+
+
+                            Dataset  Before  After  Removed  % Reduction
+        Dementia Metrics (all rows)  957876   6170   951706         99.4
+Dementia Metrics (unique practices)  957876   6170   951706         99.4
+                        GP Registry    6169   6169        0          0.0
+         GP Registry (South London)    6169    363     5806         94.1
+
+
+================================================================================
+  STEP 6: GENERATING TEXT REPORT
+================================================================================
+
+================================================================================
+  NIHR PIC SOUTH LONDON - ETL ANALYSIS REPORT  (March 2026)
+================================================================================
+
+  SECTION A  Dataset Sizes: Raw vs Cleaned
+  ----------------------------------------------------------------------
+  Dataset                                         Before     After   Removed    %Red
+  ----------------------------------------------------------------------
+  Dementia Metrics (all rows)                    957,876     6,170   951,706   99.4%
+  Dementia Metrics (unique practices)            957,876     6,170   951,706   99.4%
+  GP Registry                                      6,169     6,169         0    0.0%
+  GP Registry (South London)                       6,169       363     5,806   94.1%
+
+  SECTION B  South London Practices by ICB
+  ----------------------------------------------------------------------
+  ICB Name                                                Practices
+  ----------------------------------------------------------------------
+  NHS South East London Integrated Care Board                   174
+  NHS South West London Integrated Care Board                   153
+  TOTAL                                                         327
+
+  SECTION C  GP Registry: Postcode Coverage
+  ----------------------------------------------------------------------
+  With postcode    :   6,169  (100.0%)
+  Without postcode :       0  (0.0%)
+  Total registry   :   6,169
+
+  SECTION D  Merge Result  (PCN_ODS_CODE + PRACTICE_NAME)
+  ----------------------------------------------------------------------
+  Matched (postcode resolved) :     327  (100.0%)
+  Not matched                 :       0  (0.0%)
+  Total practices             :     327
+
+================================================================================
+
+  [OK] Text report saved : data/processed/etl_analysis_report.txt
+  [OK] Summary CSV saved : data/processed/etl_analysis_summary.csv
+
+
+================================================================================
+  STEP 7: DATA QUALITY METRICS - MERGED DATA
+================================================================================
+
+  Field completeness check:
+  ──────────────────────────────────────────────────────────────────────
+  Field                           Status    Complete       %  Description
+  ──────────────────────────────────────────────────────────────────────
+  PRACTICE_CODE                   [MISS]         N/A     N/A  Practice identifier
+  PRACTICE_NAME                   [OK]      327/327  100.0%  Practice name
+  ICB_CODE                        [OK]      327/327  100.0%  ICB code
+  PRACTICE_POSTCODE               [OK]      327/327  100.0%  Postcode for geocoding
+  SUPPLIER_NAME                   [OK]      327/327  100.0%  System supplier
+
+
+================================================================================
+  STEP 8: EXPORTING CLEANED DATASETS
+================================================================================
+
+  [OK] gp_practices_cleaned.csv                     363 rows
+  [OK] practice_data_cleaned.csv                  6,170 rows
+  [OK] merged_southlondon.csv                       327 rows
+
+  Saved to: data/processed/
+
+
+================================================================================
+  SUMMARY & APRIL 2026 ROADMAP
+================================================================================
+
+  [COMPLETE] MARCH 2026
+  ─────────────────────────────────────────────────────────────────────────
+  Data sources     : pcdem-prac-ass-plans-feb-2026.csv
+                     gp-reg-pat-prac-map-03-2026.csv
+  Cleaned outputs  : 3 CSV files
+  South London     : 6,170 practices
+  Merge strategy   : 2-level ODS  (PCN_ODS_CODE + PRACTICE_NAME)
+  Match rate       : 100.0%
+  Status           : READY for geocoding
+
+
+  [NEXT] APRIL 2026
+  ─────────────────────────────────────────────────────────────────────────
+
+  1. GEOCODING
+     Convert 327 postcodes -> lat/lon via Nominatim (OpenStreetMap)
+     Output: gp_practices_geocoded.csv
+
+  2. HOSPITAL SITES
+     Extract and geocode 11 Delivery Organisation locations
+     Output: hospital_sites_geocoded.csv
+
+  3. TRAVEL TIME CALCULATIONS
+     GP -> 5 nearest hospitals  |  haversine, pre-filter <25 km
+     Output: travel_times_optimized.csv
+
+  4. STREAMLIT MAPPING  (May)
+     Interactive Folium maps with travel time toggles
+
+
+  [KEY STATS]
+  ─────────────────────────────────────────────────────────────────────────
+  South London ICBs       : QKK, QWE
+  Practices analysed      : 327
+  GP registry (postcode)  : 6,169
+  Postcode match rate     : 100.0%
+  Geocoding readiness     : HIGH
+
+================================================================================
+  ETL ANALYSIS COMPLETE
+================================================================================
+
+STATUS: OK | pipeline/00_etl_analysis.py | 5s
+
+===== RUNNING pipeline/01_get_location_data.py =====
+INFO:__main__:======================================================================
+INFO:__main__:STEP 01: Prepare Hospital Sites
+INFO:__main__:======================================================================
+INFO:__main__:
+Loading hospital registry...
+
+INFO:__main__:
+[LOAD] Loaded 19 hospital sites from registry
+INFO:__main__:
+[LOOKUP] Loading postcode→coordinates lookup...
+INFO:__main__:[OK] Loaded postcode lookup with 109104 postcodes
+INFO:__main__:
+[MERGE] Matching hospital postcodes to coordinates...
+INFO:__main__:
+[RESULT] Postcode→coordinates mapping: 17/19 hospitals matched
+INFO:__main__:
+[FALLBACK] Geocoding 2 missing locations with Nominatim...
+INFO:__main__:  [The Royal Marsden]: (51.4913, -0.1727)
+WARNING:utils.geocoding:No result found for: Canada Avenue, Epsom, KT18 7EG
+WARNING:__main__:  [Epsom Hospital]: Nominatim geocoding failed
+INFO:__main__:
+[COMPLETE] Final geocoding result: 18/19 hospitals have coordinates
+INFO:__main__:
+[SAVE] Saved 19 hospital sites to data/processed/hospital_sites_geocoded.csv
+INFO:__main__:
+======================================================================
+INFO:__main__:SUMMARY
+INFO:__main__:======================================================================
+INFO:__main__:Total sites: 19
+INFO:__main__:Geocoded (via postcode lookup): 17
+INFO:__main__:Geocoded (via Nominatim fallback): 1
+INFO:__main__:Total geocoded: 18
+INFO:__main__:Trusts represented: 11
+INFO:__main__:
+Sites by type:
+INFO:__main__:
+Sample sites:
+INFO:__main__:
+Success! Prepared 19 hospital sites
+INFO:__main__:
+Sample:
+                     hospital_name  postcode   latitude  longitude
+0  St George's University Hospital  SW17 8QT  51.428574  -0.165577
+1          King's College Hospital   SE5 9RS  51.468078  -0.093890
+2                   Guy's Hospital   SE1 9RT  51.503331  -0.086771
+3              St Thomas' Hospital   SE1 7EH  51.497960  -0.118880
+4                The Royal Marsden   SW3 6JJ  51.491268  -0.172733
+type
+Hospital                   7
+Acute Hospital             6
+Mental Health Hospital     4
+Cancer Centre              1
+Mental Health Inpatient    1
+                        hospital_name trust_ods_code  postcode   latitude  longitude
+0     St George's University Hospital            RJ7  SW17 8QT  51.428574  -0.165577
+1             King's College Hospital            RJ2   SE5 9RS  51.468078  -0.093890
+2                      Guy's Hospital            RJ1   SE1 9RT  51.503331  -0.086771
+3                 St Thomas' Hospital            RJ1   SE1 7EH  51.497960  -0.118880
+4                   The Royal Marsden            RID   SW3 6JJ  51.491268  -0.172733
+5            Queen Elizabeth Hospital            RWE  SE18 4QH  51.478194   0.050069
+6                   Lewisham Hospital            RWE  SE13 6LH  51.453022  -0.017917
+7  Princess Royal University Hospital            RJ2   BR6 8ND  51.366244   0.059174
+8          The Royal Marsden - Sutton            RID   SM2 5PT  51.343477  -0.191090
+9                   Kingston Hospital            RWH   KT2 7QB  51.414826  -0.282602
+STATUS: OK | pipeline/01_get_location_data.py | 3s
+
+===== RUNNING pipeline/02_prepare_msoa_data.py =====
+INFO:__main__:======================================================================
+INFO:__main__:STEP 02: Geocode Practices & Match to MSOA
+INFO:__main__:======================================================================
+INFO:__main__:
+[LOAD] Reading data/processed/merged_southlondon.csv...
+INFO:__main__:[OK] Loaded 327 practices
+INFO:__main__:
+[LOOKUP] Loading postcode→MSOA lookup and coordinates...
+INFO:__main__:[LOOKUP] Loading postcode→MSOA lookup from /workspaces/NIHR_PIC_SouthLondon/data/lookups/National_Statistics_Postcode_Lookup_(February_2026)_for_the_UK_(Hosted_Table).csv...
+INFO:__main__:[RESULT] Postcode→MSOA matching: 327/327 practices matched (100.0%)
+INFO:__main__:
+[SAVE] Saved 327 practices to data/processed/gp_practices_msoa.csv
+INFO:__main__:
+======================================================================
+INFO:__main__:SUMMARY
+INFO:__main__:======================================================================
+INFO:__main__:Total practices: 327
+INFO:__main__:Coordinates from lookup (lat/lon): 327
+INFO:__main__:Matched to MSOA: 327
+INFO:__main__:Unique MSOAs: 213
+INFO:__main__:
+Dementia Register (65+):
+INFO:__main__:  Total patients: 20,482
+INFO:__main__:  Mean per practice: 62.6
+INFO:__main__:
+Dementia Register (0-64):
+INFO:__main__:  Total patients: 724
+INFO:__main__:  Mean per practice: 2.2
+INFO:__main__:
+Sample:
+INFO:__main__:
+✓ SUCCESS! Prepared 327 practices with MSOA assignments
+                   PRACTICE_NAME PRACTICE_POSTCODE   MSOA21CD   latitude  longitude  DEMENTIA_REGISTER_65_PLUS
+0                MANOR BROOK PMS           SE3 0EN  E02000333  51.469221   0.025088                       61.0
+1           THE WESTWOOD SURGERY          DA16 2HE  E02000080  51.463176   0.097323                      170.0
+2          BARNARD MEDICAL GROUP          DA14 4TA  E02000090  51.427920   0.105576                       97.0
+3             THE ALBION SURGERY           DA6 7LP  E02000079  51.453977   0.147423                      123.0
+4             BELLEGROVE SURGERY          DA16 3RE  E02006785  51.464561   0.095817                       67.0
+5  NORTHUMBERLAND HEATH MED.CTR.           DA8 3DB  E02000069  51.476927   0.166028                      144.0
+6   GALLIONS REACH HEALTH CENTRE          SE28 8BE  E02000314  51.505665   0.109491                       60.0
+7        BLACKHEATH STANDARD PMS           SE3 7HB  E02000328  51.478134   0.019823                       32.0
+8              ELTHAM PALACE PMS           SE9 5DQ  E02000340  51.449946   0.053740                       30.0
+9   ROYAL ARSENAL MEDICAL CENTRE          SE18 6TE  E02006991  51.493492   0.073503                       35.0
+STATUS: OK | pipeline/02_prepare_msoa_data.py | 4s
+
+===== RUNNING pipeline/02b_msoa_visualization.py =====
+INFO:__main__:======================================================================
+INFO:__main__:STEP 02b: MSOA Aggregation & Density Visualization
+INFO:__main__:======================================================================
+INFO:__main__:
+[LOAD] Reading data/processed/gp_practices_msoa.csv...
+INFO:__main__:[OK] Loaded 327 practices
+INFO:__main__:[FILTER] Filtered to 327 practices in South London ICBs
+INFO:__main__:
+[AGGREGATE] Aggregating dementia counts by MSOA...
+INFO:__main__:[OK] Aggregated to 213 MSOAs with dementia data
+INFO:__main__:
+[LOAD] Reading MSOA boundaries from /workspaces/NIHR_PIC_SouthLondon/data/boundaries/Middle_layer_Super_Output_Areas_December_2021_Boundaries_EW_BSC_V3_1633701655676791957.geojson...
+INFO:__main__:[OK] Loaded 7264 MSOA
+INFO:__main__:
+[MERGE] Merging dementia data with MSOA boundaries...
+INFO:__main__:[FILTER] Retained 213 MSOAs with South London practices (from 7264 total)
+INFO:__main__:
+[DENSITY] Calculating dementia density (counts per km²)...
+INFO:__main__:[OK] Density calculated
+INFO:__main__:
+[SAVE] MSOA summary saved to data/processed/msoa_dementia_summary.csv
+INFO:__main__:
+[MAP] Creating interactive map...
+INFO:__main__:  [LAYER] Adding MSOA choropleth layers (65+, 0-64, total)...
+INFO:__main__:  [LAYER] Adding GP practice markers...
+INFO:__main__:    327/327 practices have coordinates
+INFO:__main__:  [LAYER] Adding hospital location markers...
+INFO:__main__:    18/19 hospitals have coordinates
+INFO:__main__:
+[SAVE] Interactive map saved to data/processed/msoa_dementia_map.html
+INFO:__main__:  Open in browser: file:///workspaces/NIHR_PIC_SouthLondon/data/processed/msoa_dementia_map.html
+INFO:__main__:
+======================================================================
+INFO:__main__:SUMMARY
+INFO:__main__:======================================================================
+INFO:__main__:MSOAs visualized: 213
+INFO:__main__:GP practices: 327
+INFO:__main__:Hospital sites: 18
+INFO:__main__:
+Dementia Register (65+):
+INFO:__main__:  Total: 20,482
+INFO:__main__:  By MSOA - Min: 7, Max: 820
+INFO:__main__:
+Dementia Register (0-64):
+INFO:__main__:  Total: 724
+INFO:__main__:  By MSOA - Min: 0, Max: 25
+INFO:__main__:
+Density (to account for MAUP):
+INFO:__main__:  65+ density:
+INFO:__main__:    Min: 3.46 per km²
+INFO:__main__:    Median: 55.61 per km²
+INFO:__main__:    Max: 469.26 per km²
+INFO:__main__:  0-64 density:
+INFO:__main__:    Min: 0.00 per km²
+INFO:__main__:    Median: 1.87 per km²
+INFO:__main__:    Max: 17.41 per km²
+INFO:__main__:  Total density:
+INFO:__main__:    Min: 3.46 per km²
+INFO:__main__:    Median: 57.62 per km²
+INFO:__main__:    Max: 479.35 per km²
+INFO:__main__:
+✓ SUCCESS! Created MSOA density visualization
+STATUS: OK | pipeline/02b_msoa_visualization.py | 7s
+
+===== RUNNING pipeline/03_calculate_travel_times_tfl.py =====
+2026-08-19 08:57:50,646 INFO ================================================================================
+2026-08-19 08:57:50,646 INFO STEP 03: Calculate Travel Times (TfL API - 3 Modes)
+2026-08-19 08:57:50,646 INFO ================================================================================
+2026-08-19 08:57:50,646 INFO 
+[LOAD] Reading GP practices and hospital sites...
+2026-08-19 08:57:50,656 INFO [OK] Loaded 327 GP practices (with coordinates)
+2026-08-19 08:57:50,657 INFO [OK] Loaded 18 hospital sites (with coordinates)
+2026-08-19 08:57:50,657 INFO 
+[CACHE] Loading TfL journey cache...
+2026-08-19 08:57:50,662 INFO [OK] Cache contains 5886 queries
+2026-08-19 08:57:50,970 INFO 
+[QUERY] Need 0 GP→Hospital pairs (0 total mode queries)
+2026-08-19 08:57:50,970 INFO   All queries already cached!
+2026-08-19 08:57:50,970 INFO 
+[OUTPUT] Building results dataset...
+2026-08-19 08:57:51,335 INFO [SAVE] Writing 5886 results to CSV...
+2026-08-19 08:57:51,361 INFO [OK] Saved: data/processed/travel_times_optimized.csv
+2026-08-19 08:57:51,361 INFO 
+================================================================================
+2026-08-19 08:57:51,361 INFO SUMMARY
+2026-08-19 08:57:51,361 INFO ================================================================================
+2026-08-19 08:57:51,361 INFO Total GP→Hospital pairs:        5886
+2026-08-19 08:57:51,364 INFO 
+Transit:
+2026-08-19 08:57:51,364 INFO   Valid results:  5,800 (98.5%)
+2026-08-19 08:57:51,364 INFO   Mean time:      58.9 min
+2026-08-19 08:57:51,365 INFO   Median time:    58.0 min
+2026-08-19 08:57:51,365 INFO   Min - Max:      4.0 - 127.0 min
+2026-08-19 08:57:51,367 INFO 
+Walking:
+2026-08-19 08:57:51,367 INFO   Valid results:  192 (3.3%)
+2026-08-19 08:57:51,367 INFO   Mean time:      26.6 min
+2026-08-19 08:57:51,367 INFO   Median time:    28.0 min
+2026-08-19 08:57:51,368 INFO   Min - Max:      4.0 - 39.0 min
+2026-08-19 08:57:51,368 INFO 
+================================================================================
+2026-08-19 08:57:51,368 INFO ✓ TRAVEL TIMES COMPLETE
+2026-08-19 08:57:51,368 INFO ================================================================================
+STATUS: OK | pipeline/03_calculate_travel_times_tfl.py | 1s
+
+===== RUNNING pipeline/04_prepare_dementia_data.py =====
+INFO:__main__:============================================================
+INFO:__main__:STEP 4: Prepare Dementia Prevalence Data
+INFO:__main__:============================================================
+INFO:__main__:Loaded dementia_data: 4680 rows, 28 columns
+INFO:__main__:  Columns: ['ACH_DATE', 'ORG_TYPE', 'ORG_CODE', 'ONS_CODE', 'AREA_NAME']...
+INFO:__main__:Loaded dementia_metadata: 30 rows, 2 columns
+INFO:__main__:  Columns: ['Column_Name', 'Description']...
+INFO:__main__:Loading practice dementia data from /workspaces/NIHR_PIC_SouthLondon/data/processed/practice_data_cleaned.csv...
+INFO:__main__:Found 6170 unique practices with dementia data
+INFO:__main__:Calculated prevalence percentages and total population:
+INFO:__main__:  - Practices with 0-64 prevalence: 6162
+INFO:__main__:  - Practices with 65+ prevalence: 6157
+INFO:__main__:  - Practices with total prevalence: 6164
+INFO:__main__:Saved practice-level dementia data to data/processed/dementia_by_practice.csv
+INFO:__main__:
+Success! Prepared dementia data
+INFO:__main__:
+Sample:
+  PRACTICE_CODE  ... DEMENTIA_PREVALENCE_TOTAL_PCT
+0        A81001  ...                      0.801496
+1        A81002  ...                      0.997105
+2        A81004  ...                      1.077152
+3        A81005  ...                      1.527924
+4        A81006  ...                      1.318862
+
+[5 rows x 11 columns]
+STATUS: OK | pipeline/04_prepare_dementia_data.py | 1s
+
+===== RUNNING pipeline/04b_enrich_imd_raw.py =====
+INFO:__main__:======================================================================
+INFO:__main__:STEP 04B: Enrich GP Data with Raw IMD Score (Fingertips)
+INFO:__main__:======================================================================
+INFO:__main__:[API] Fetching Fingertips indicator 94240 for GP area type 7...
+INFO:__main__:[API] Retrieved 6144 GP IMD rows with non-null values
+INFO:__main__:[SAVE] Updated GP file: /workspaces/NIHR_PIC_SouthLondon/data/processed/gp_practices_geocoded.csv
+INFO:__main__:[SAVE] Match audit file: /workspaces/NIHR_PIC_SouthLondon/data/processed/imd_match_audit.csv
+INFO:__main__:[QA] Match coverage: 322/327 (98.47%)
+WARNING:__main__:[QA] Unmatched practice examples: ['Y06113', 'Y06545', 'Y07020', 'Y08411', 'H85691']
+INFO:__main__:[DONE] Enriched rows: 327
+STATUS: OK | pipeline/04b_enrich_imd_raw.py | 0s
+
+===== RUNNING pipeline/05_prepare_diabetes_data.py =====
+
+================================================================================
+  NIHR PIC SOUTH LONDON - DIABETES AUDIT DATA PREPARATION
+================================================================================
+
+[DATA] Raw file: National Diabetes Audit, 2025-26, April 2025 to December 2025.xlsx
+[DATA] GP reference: gp_practices_geocoded.csv
+
+================================================================================
+  STEP 1: LOAD DIABETES AUDIT DATA
+================================================================================
+
+[OK]   Type 1 rows: 7624
+[OK]   Type 2 rows: 7640
+
+================================================================================
+  STEP 2: FILTER TO SOUTH LONDON ICBS
+================================================================================
+
+[OK]   Type 1 (South London): 444 rows
+[OK]   Type 2 (South London): 445 rows
+
+================================================================================
+  STEP 3: EXTRACT GP-LEVEL DATA
+================================================================================
+
+[OK]   Type 1 GP records: 362
+[OK]   Type 2 GP records: 363
+
+[OK]   Total unique GPs with diabetes data: 363
+
+================================================================================
+  STEP 4: MERGE WITH EXISTING GP PRACTICES
+================================================================================
+
+[OK]   Loaded 327 existing GP practices
+
+[OK]   Loaded practice data with population info (6170 records)
+
+[OK]   Added population data to 327 practices
+
+[OK]   Matched diabetes data to 325 practices (99.4%)
+
+================================================================================
+  STEP 5: ADD POPULATION DATA
+================================================================================
+
+[OK]   Added population data to 363 diabetes records
+
+================================================================================
+  STEP 6: SAVE OUTPUTS
+================================================================================
+
+[OK]   Saved: diabetes_by_practice.csv (363 records)
+[OK]   Saved: gp_practices_with_diabetes.csv (327 records)
+
+================================================================================
+  STEP 7: SUMMARY STATISTICS
+================================================================================
+
+Type 1 Diabetes (South London):
+  - Total practices: 362
+  - Total registered: 12870
+  - Avg per practice: 35.5
+
+Type 2 Diabetes (South London):
+  - Total practices: 363
+  - Total registered: 201035
+  - Avg per practice: 553.8
+
+Combined:
+  - Total practices with diabetes data: 363
+  - Practices matched to existing GP list: 325
+
+================================================================================
+  ✅ DIABETES DATA PREPARATION COMPLETE
+================================================================================
+
+STATUS: OK | pipeline/05_prepare_diabetes_data.py | 6s
+
+===== RUNNING pipeline/06_prepare_gp_age_sex_cohorts.py =====
+INFO:__main__:======================================================================
+INFO:__main__:STEP 06: Prepare GP Age/Sex Cohort Table
+INFO:__main__:======================================================================
+INFO:__main__:[LOAD] Reading gp-reg-pat-prac-quin-age.csv
+INFO:__main__:[OK] Rows loaded: 326,241
+INFO:__main__:[FILTER] ORG_TYPE == GP rows: 263,977
+INFO:__main__:[OK] Cohort rows (granular): 245,560
+INFO:__main__:[OK] Distinct practices in cohorts: 6,139
+INFO:__main__:[QA] Row-level join coverage to gp_practices_geocoded: 12,960/245,560 (5.3%)
+INFO:__main__:[FILTER] Kept project GP cohort rows: 12,960/245,560
+INFO:__main__:[FILTER] Distinct project practices in cohorts: 324
+INFO:__main__:[SAVE] gp_age_sex_cohorts_long.csv (12,960 rows)
+INFO:__main__:[SAVE] gp_age_sex_cohorts_unmatched_codes.csv (5,815 rows)
+INFO:__main__:[QA] Practice total mismatch count (>1 patient diff): 0/324
+INFO:__main__:======================================================================
+INFO:__main__:GP age/sex cohort preparation complete
+INFO:__main__:======================================================================
+STATUS: OK | pipeline/06_prepare_gp_age_sex_cohorts.py | 1s
+

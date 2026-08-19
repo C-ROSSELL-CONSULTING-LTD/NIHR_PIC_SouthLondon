@@ -75,3 +75,21 @@
 **Prepared by**: Data Acquisition Team  
 **Date**: 20 March 2026  
 **Status**: ✅ MARCH GOALS DELIVERED
+
+---
+
+## August 2026 Update: IMD Enrichment
+
+- [x] Added GP-level IMD enrichment stage: [pipeline/04b_enrich_imd_raw.py](pipeline/04b_enrich_imd_raw.py)
+- [x] Source locked to Fingertips raw indicator: `94240` (Deprivation score (IMD 2025)), GP area type `7`
+- [x] Time period locked: `2025` only
+- [x] ODS join key used: `practice_code_gp` ↔ Fingertips `Area Code`
+- [x] Updated canonical GP output with IMD raw fields in [data/processed/gp_practices_geocoded.csv](data/processed/gp_practices_geocoded.csv)
+- [x] Added audit output: [data/processed/imd_match_audit.csv](data/processed/imd_match_audit.csv)
+- [x] Added dependency: [requirements.txt](requirements.txt) includes `fingertips_py>=0.4.3`
+
+Validation snapshot (run on 2026-08-19):
+- Practices in GP file: 327
+- IMD matches: 322
+- Match rate: 98.47%
+- Unmatched ODS examples: Y06113, Y06545, Y07020, Y08411, H85691
