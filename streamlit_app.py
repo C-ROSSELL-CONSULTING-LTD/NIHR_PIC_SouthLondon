@@ -378,8 +378,27 @@ st.markdown("""
 # DATA LOADING & CACHING
 # ============================================================================
 
+def get_processed_data_version():
+    """Return a cache key that changes when processed data files change."""
+    data_dir = Path(__file__).parent / "data" / "processed"
+    tracked_files = [
+        "gp_practices_geocoded.csv",
+        "hospital_sites_geocoded.csv",
+        "universities_geocoded.csv",
+        "msoa_dementia_summary.csv",
+        "travel_times_optimized.csv",
+        "dementia_by_practice.csv",
+        "diabetes_by_practice.csv",
+        "gp_age_sex_cohorts_long.csv",
+    ]
+    return tuple(
+        (name, (data_dir / name).stat().st_mtime_ns if (data_dir / name).exists() else None)
+        for name in tracked_files
+    )
+
+
 @st.cache_data
-def load_data():
+def load_data(data_version):
     """Load and cache all processed datasets."""
     data_dir = Path(__file__).parent / "data" / "processed"
     boundaries_dir = Path(__file__).parent / "data" / "boundaries"
@@ -806,7 +825,7 @@ def main():
     """, unsafe_allow_html=True)
     
     # Load data
-    data = load_data()
+    data = load_data(get_processed_data_version())
     
     if data is None:
         st.error("❌ Unable to load data. Please ensure processed data files are available in `/data/processed/`")
