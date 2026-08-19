@@ -1,10 +1,10 @@
 """
-Script 03: Calculate travel times from GPs to hospitals using TfL Journey API.
+Script 03: Calculate travel times from GPs to destinations using TfL Journey API.
 Supports three travel modes: Car, Public Transit, Walking.
 
 Workflow:
-  1. Load geocoded GP practices and hospital sites
-  2. Query TfL API for each GP→Hospital pair (327 * 18 = 5,886 queries)
+    1. Load geocoded GP practices plus destination sites (hospitals + universities)
+    2. Query TfL API for each GP→Destination pair
   3. Calculate travel time for each mode: car, public transit, walking
   4. Cache results to avoid re-querying
   5. Output: travel_times_optimized.csv with all three modes
@@ -43,6 +43,7 @@ DATA_DIR = PROJECT_DIR / "data"
 # Input files (already geocoded)
 GP_FILE = os.path.join(PROCESSED_DATA_DIR, "gp_practices_geocoded.csv")
 HOSPITAL_FILE = os.path.join(PROCESSED_DATA_DIR, "hospital_sites_geocoded.csv")
+UNIVERSITY_FILE = os.path.join(PROCESSED_DATA_DIR, "universities_geocoded.csv")
 
 # Output
 OUTPUT_FILE = os.path.join(PROCESSED_DATA_DIR, "travel_times_optimized.csv")
@@ -159,7 +160,7 @@ def main():
     logger.info("=" * 80)
     
     # Load data
-    logger.info("\n[LOAD] Reading GP practices and hospital sites...")
+    logger.info("\n[LOAD] Reading GP practices and destination sites...")
     
     if not os.path.exists(GP_FILE):
         logger.error(f"GP file not found: {GP_FILE}")
@@ -168,18 +169,39 @@ def main():
     if not os.path.exists(HOSPITAL_FILE):
         logger.error(f"Hospital file not found: {HOSPITAL_FILE}")
         return
+
+    if not os.path.exists(UNIVERSITY_FILE):
+        logger.error(f"University file not found: {UNIVERSITY_FILE}")
+        return
     
     gp_df = pd.read_csv(GP_FILE)
     hospital_df = pd.read_csv(HOSPITAL_FILE)
+    university_df = pd.read_csv(UNIVERSITY_FILE)
     
     # Filter to valid coordinates
     gp_valid = gp_df[gp_df['latitude'].notna() & gp_df['longitude'].notna()].copy()
     hosp_valid = hospital_df[hospital_df['latitude'].notna() & hospital_df['longitude'].notna()].copy()
+    uni_valid = university_df[university_df['latitude'].notna() & university_df['longitude'].notna()].copy()
+
+    # Build unified destination table while preserving hospital metadata for downstream compatibility.
+    hosp_destinations = hosp_valid.copy()
+    hosp_destinations['destination_name'] = hosp_destinations['hospital_name']
+    hosp_destinations['destination_type'] = 'Hospital'
+    hosp_destinations['destination_group'] = hosp_destinations.get('trust', None)
+
+    uni_destinations = uni_valid.copy()
+    uni_destinations['destination_name'] = uni_destinations['university_name']
+    uni_destinations['destination_type'] = 'University'
+    uni_destinations['destination_group'] = None
+
+    destination_df = pd.concat([hosp_destinations, uni_destinations], ignore_index=True)
     
     logger.info(f"[OK] Loaded {len(gp_valid)} GP practices (with coordinates)")
     logger.info(f"[OK] Loaded {len(hosp_valid)} hospital sites (with coordinates)")
+    logger.info(f"[OK] Loaded {len(uni_valid)} university sites (with coordinates)")
+    logger.info(f"[OK] Total destinations: {len(destination_df)}")
     
-    if gp_valid.empty or hosp_valid.empty:
+    if gp_valid.empty or destination_df.empty:
         logger.error("No valid coordinates found!")
         return
     
@@ -191,10 +213,11 @@ def main():
     # Build work list
     work_items = []
     for gp_idx, gp_row in gp_valid.iterrows():
-        for hosp_idx, hosp_row in hosp_valid.iterrows():
+        for dest_idx, dest_row in destination_df.iterrows():
             gp_code = gp_row.get('practice_code_gp', str(gp_idx))
-            hosp_name = hosp_row.get('hospital_name', str(hosp_idx))
-            cache_key = f"{gp_code}→{hosp_name}"
+            dest_name = dest_row.get('destination_name', str(dest_idx))
+            dest_type = dest_row.get('destination_type', 'Destination')
+            cache_key = f"{gp_code}→{dest_type}:{dest_name}"
             
             # Skip if Transit and Walking both cached (Car is estimated, not queried)
             if cache_key in tfl_cache:
@@ -204,16 +227,17 @@ def main():
             
             work_items.append({
                 'gp_code': gp_code,
-                'hosp_name': hosp_name,
+                'destination_name': dest_name,
+                'destination_type': dest_type,
                 'gp_lat': gp_row['latitude'],
                 'gp_lon': gp_row['longitude'],
-                'hosp_lat': hosp_row['latitude'],
-                'hosp_lon': hosp_row['longitude'],
+                'dest_lat': dest_row['latitude'],
+                'dest_lon': dest_row['longitude'],
                 'cache_key': cache_key,
             })
     
     total_queries = len(work_items) * 3
-    logger.info(f"\n[QUERY] Need {len(work_items)} GP→Hospital pairs ({total_queries} total mode queries)")
+    logger.info(f"\n[QUERY] Need {len(work_items)} GP→Destination pairs ({total_queries} total mode queries)")
     
     if not work_items:
         logger.info("  All queries already cached!")
@@ -244,7 +268,7 @@ def main():
                             query_tfl_mode(
                                 session,
                                 (item['gp_lat'], item['gp_lon']),
-                                (item['hosp_lat'], item['hosp_lon']),
+                                (item['dest_lat'], item['dest_lon']),
                                 mode,
                                 semaphore
                             )
@@ -290,10 +314,11 @@ def main():
     
     results = []
     for gp_idx, gp_row in gp_valid.iterrows():
-        for hosp_idx, hosp_row in hosp_valid.iterrows():
+        for dest_idx, dest_row in destination_df.iterrows():
             gp_code = gp_row.get('practice_code_gp', str(gp_idx))
-            hosp_name = hosp_row.get('hospital_name', str(hosp_idx))
-            cache_key = f"{gp_code}→{hosp_name}"
+            dest_name = dest_row.get('destination_name', str(dest_idx))
+            dest_type = dest_row.get('destination_type', 'Destination')
+            cache_key = f"{gp_code}→{dest_type}:{dest_name}"
             
             cached = tfl_cache.get(cache_key, {})
             
@@ -314,8 +339,11 @@ def main():
             results.append({
                 'practice_code': gp_code,
                 'practice_name': gp_row.get('practice_name', 'Unknown'),
-                'hospital_name': hosp_name,
-                'hospital_trust': hosp_row.get('trust', 'Unknown'),
+                'destination_name': dest_name,
+                'destination_type': dest_type,
+                'destination_group': dest_row.get('destination_group'),
+                'hospital_name': dest_name if dest_type == 'Hospital' else None,
+                'hospital_trust': dest_row.get('trust', 'Unknown') if dest_type == 'Hospital' else None,
                 'travel_time_car_minutes': car_time if isinstance(car_time, (int, float)) and car_time > 0 else None,
                 'travel_time_transit_minutes': transit_time if isinstance(transit_time, (int, float)) and transit_time > 0 else None,
                 'travel_time_walking_minutes': walk_time if isinstance(walk_time, (int, float)) and walk_time > 0 else None,
@@ -334,7 +362,10 @@ def main():
     logger.info("\n" + "=" * 80)
     logger.info("SUMMARY")
     logger.info("=" * 80)
-    logger.info(f"Total GP→Hospital pairs:        {len(result_df)}")
+    logger.info(f"Total GP→Destination pairs:     {len(result_df)}")
+    if 'destination_type' in result_df.columns:
+        logger.info("\nPairs by destination type:")
+        print(result_df['destination_type'].value_counts().to_string())
     
     for mode, col in [('Car', 'travel_time_car_minutes'), 
                       ('Transit', 'travel_time_transit_minutes'),

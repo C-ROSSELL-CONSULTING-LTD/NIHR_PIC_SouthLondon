@@ -1,13 +1,15 @@
 """
-Script 01: Extract and geocode hospital locations for the 11 Delivery Organisations.
+Script 01: Extract and geocode destination locations for South London PIC mapping.
 Sources:
-  - Manually curated hospital registry (comprehensive list of acute, mental health, and specialist hospitals)
-  - Postcode lookup for fast geocoding (no API rate-limiting)
+    - Manually curated hospital registry (acute, mental health, specialist hospitals)
+    - Manually curated university registry
+    - Postcode lookup for fast geocoding (no API rate-limiting)
 
 Workflow:
-  1. Load fallback hospital registry (21 sites across 11 trusts)
-  2. Match postcodes to coordinates using ONS postcode lookup
-  3. Save hospital_sites_geocoded.csv
+    1. Load fallback registries (hospitals and universities)
+    2. Match postcodes to coordinates using ONS postcode lookup
+    3. Fallback to Nominatim for any missing coordinates
+    4. Save hospital_sites_geocoded.csv and universities_geocoded.csv
 """
 
 import pandas as pd
@@ -25,6 +27,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 HOSPITAL_DATA_FILE = os.path.join(PROCESSED_DATA_DIR, "hospital_sites_geocoded.csv")
+UNIVERSITY_DATA_FILE = os.path.join(PROCESSED_DATA_DIR, "universities_geocoded.csv")
 
 # Postcode lookup for coordinates
 SCRIPT_DIR = Path(__file__).parent
@@ -209,112 +212,184 @@ FALLBACK_HOSPITAL_REGISTRY = [
     },
 ]
 
+# Curated university destinations for South London PIC planning
+FALLBACK_UNIVERSITY_REGISTRY = [
+    {
+        "university_name": "London South Bank University",
+        "postcode": "SE1 0AA",
+        "address": "London South Bank University, London, SE1 0AA",
+        "type": "University"
+    },
+    {
+        "university_name": "King's College London",
+        "postcode": "SE1 8WA",
+        "address": "King's College London, London, SE1 8WA",
+        "type": "University"
+    },
+    {
+        "university_name": "St. George's Hospital Medical School",
+        "postcode": "SW17 0RE",
+        "address": "St. George's Hospital Medical School, London, SW17 0RE",
+        "type": "University"
+    },
+    {
+        "university_name": "Goldsmiths, University of London",
+        "postcode": "SE14 6NW",
+        "address": "Goldsmiths, University of London, London, SE14 6NW",
+        "type": "University"
+    },
+    {
+        "university_name": "Roehampton University",
+        "postcode": "SW15 5PJ",
+        "address": "Roehampton University, London, SW15 5PJ",
+        "type": "University"
+    },
+    {
+        "university_name": "Ravensbourne University London",
+        "postcode": "SE10 0WE",
+        "address": "Ravensbourne University London, London, SE10 0WE",
+        "type": "University"
+    },
+    {
+        "university_name": "University of Greenwich",
+        "postcode": "SE10 9LS",
+        "address": "University of Greenwich, London, SE10 9LS",
+        "type": "University"
+    },
+    {
+        "university_name": "City St George's, University of London",
+        "postcode": "EC1V 0HB",
+        "address": "City St George's, University of London, London, EC1V 0HB",
+        "type": "University"
+    },
+]
 
 
-def prepare_hospital_data():
-    """
-    Main workflow:
-    1. Load hospital registry (curated list of 21 sites across 11 trusts)
-    2. Match postcodes to coordinates using ONS postcode lookup
-    3. Save to CSV
-    """
-    
+def load_postcode_lookup():
+    """Load and normalize the ONS postcode lookup table."""
+    logger.info("\n[LOOKUP] Loading postcode->coordinates lookup...")
+    postcode_lookup = pd.read_csv(POSTCODE_LOOKUP, low_memory=False)
+
+    if 'pcds' in postcode_lookup.columns:
+        postcode_lookup.rename(columns={'pcds': 'postcode_norm'}, inplace=True)
+    else:
+        postcode_lookup.rename(columns={postcode_lookup.columns[0]: 'postcode_norm'}, inplace=True)
+
+    postcode_lookup['postcode_norm'] = postcode_lookup['postcode_norm'].str.replace(' ', '').str.upper()
+    logger.info(f"[OK] Loaded postcode lookup with {len(postcode_lookup)} postcodes")
+    return postcode_lookup
+
+
+def geocode_registry(registry_data, name_column, output_file, destination_label):
+    """Geocode a destination registry and save the enriched output CSV."""
+    logger.info("\n" + "=" * 70)
+    logger.info(f"STEP 01: Prepare {destination_label}")
     logger.info("=" * 70)
-    logger.info("STEP 01: Prepare Hospital Sites")
-    logger.info("=" * 70)
-    logger.info(f"\nLoading hospital registry...\n")
-    
-    hospital_data = FALLBACK_HOSPITAL_REGISTRY.copy()
-    
-    # Create DataFrame
-    hospital_df = pd.DataFrame(hospital_data)
-    logger.info(f"\n[LOAD] Loaded {len(hospital_df)} hospital sites from registry")
-    
-    # Load postcode lookup for coordinates (replaces Nominatim geocoding)
-    logger.info(f"\n[LOOKUP] Loading postcode→coordinates lookup...")
+    logger.info(f"\nLoading {destination_label.lower()} registry...\n")
+
+    dest_df = pd.DataFrame(registry_data.copy())
+    logger.info(f"\n[LOAD] Loaded {len(dest_df)} {destination_label.lower()} from registry")
+
     try:
-        postcode_lookup = pd.read_csv(POSTCODE_LOOKUP, low_memory=False)
-        # Normalize postcode column name if different
-        if 'pcds' in postcode_lookup.columns:
-            postcode_lookup.rename(columns={'pcds': 'postcode_norm'}, inplace=True)
-        else:
-            postcode_lookup.rename(columns={postcode_lookup.columns[0]: 'postcode_norm'}, inplace=True)
-        
-        postcode_lookup['postcode_norm'] = postcode_lookup['postcode_norm'].str.replace(' ', '').str.upper()
-        logger.info(f"[OK] Loaded postcode lookup with {len(postcode_lookup)} postcodes")
+        postcode_lookup = load_postcode_lookup()
     except FileNotFoundError:
         logger.error(f"[ERROR] Postcode lookup not found: {POSTCODE_LOOKUP}")
         logger.error("[HINT] Download from ONS or copy to data/lookups/ directory")
         return None
-    
-    # Normalize hospital postcodes for lookup
-    hospital_df['postcode_norm'] = hospital_df['postcode'].fillna('').str.replace(' ', '').str.upper()
-    
-    # Merge with postcode lookup to get coordinates
-    logger.info(f"\n[MERGE] Matching hospital postcodes to coordinates...")
-    hospital_df = hospital_df.merge(
+
+    dest_df['postcode_norm'] = dest_df['postcode'].fillna('').str.replace(' ', '').str.upper()
+
+    logger.info(f"\n[MERGE] Matching {destination_label.lower()} postcodes to coordinates...")
+    dest_df = dest_df.merge(
         postcode_lookup[['postcode_norm', 'lat', 'long']],
         on='postcode_norm',
         how='left'
     )
-    
-    # Rename columns to match expected output
-    hospital_df.rename(columns={'lat': 'latitude', 'long': 'longitude'}, inplace=True)
-    
-    lookup_success = hospital_df['latitude'].notna().sum()
-    logger.info(f"\n[RESULT] Postcode→coordinates mapping: {lookup_success}/{len(hospital_df)} hospitals matched")
-    
-    # Drop temporary postcode_norm column
-    hospital_df.drop(columns=['postcode_norm'], inplace=True)
-    
-    # Fallback: Geocode missing locations using Nominatim
-    missing_coords = hospital_df[hospital_df['latitude'].isna()].copy()
+    dest_df.rename(columns={'lat': 'latitude', 'long': 'longitude'}, inplace=True)
+
+    lookup_success = dest_df['latitude'].notna().sum()
+    logger.info(
+        f"\n[RESULT] Postcode->coordinates mapping: {lookup_success}/{len(dest_df)} "
+        f"{destination_label.lower()} matched"
+    )
+
+    dest_df.drop(columns=['postcode_norm'], inplace=True)
+
+    missing_coords = dest_df[dest_df['latitude'].isna()].copy()
     if len(missing_coords) > 0:
         logger.info(f"\n[FALLBACK] Geocoding {len(missing_coords)} missing locations with Nominatim...")
-        
+
         for idx, row in missing_coords.iterrows():
             address = row.get('address', '')
-            if address:
-                lat, lon = geocode_address(address)
-                if lat and lon:
-                    hospital_df.at[idx, 'latitude'] = lat
-                    hospital_df.at[idx, 'longitude'] = lon
-                    logger.info(f"  [{row['hospital_name']}]: ({lat:.4f}, {lon:.4f})")
-                else:
-                    logger.warning(f"  [{row['hospital_name']}]: Nominatim geocoding failed")
-    
-    final_success = hospital_df['latitude'].notna().sum()
-    logger.info(f"\n[COMPLETE] Final geocoding result: {final_success}/{len(hospital_df)} hospitals have coordinates")
-    
-    
-    # Save data
+            if not address:
+                address = f"{row.get(name_column, '')}, {row.get('postcode', '')}, London"
+            lat, lon = geocode_address(address)
+            if lat and lon:
+                dest_df.at[idx, 'latitude'] = lat
+                dest_df.at[idx, 'longitude'] = lon
+                logger.info(f"  [{row.get(name_column, 'Unknown')}]: ({lat:.4f}, {lon:.4f})")
+            else:
+                logger.warning(f"  [{row.get(name_column, 'Unknown')}]: Nominatim geocoding failed")
+
+    final_success = dest_df['latitude'].notna().sum()
+    logger.info(
+        f"\n[COMPLETE] Final geocoding result: {final_success}/{len(dest_df)} "
+        f"{destination_label.lower()} have coordinates"
+    )
+
     os.makedirs(PROCESSED_DATA_DIR, exist_ok=True)
-    hospital_df.to_csv(HOSPITAL_DATA_FILE, index=False)
-    logger.info(f"\n[SAVE] Saved {len(hospital_df)} hospital sites to {HOSPITAL_DATA_FILE}")
-    
-    # Summary
+    dest_df.to_csv(output_file, index=False)
+    logger.info(f"\n[SAVE] Saved {len(dest_df)} {destination_label.lower()} to {output_file}")
+
     logger.info("\n" + "=" * 70)
     logger.info("SUMMARY")
     logger.info("=" * 70)
-    logger.info(f"Total sites: {len(hospital_df)}")
+    logger.info(f"Total {destination_label.lower()}: {len(dest_df)}")
     logger.info(f"Geocoded (via postcode lookup): {lookup_success}")
-    logger.info(f"Geocoded (via Nominatim fallback): {hospital_df['latitude'].notna().sum() - lookup_success}")
-    logger.info(f"Total geocoded: {hospital_df['latitude'].notna().sum()}")
-    logger.info(f"Trusts represented: {hospital_df['trust_ods_code'].nunique()}")
-    logger.info(f"\nSites by type:")
-    print(hospital_df['type'].value_counts().to_string())
-    
-    logger.info(f"\nSample sites:")
-    sample_cols = ['hospital_name', 'trust_ods_code', 'postcode', 'latitude', 'longitude']
-    print(hospital_df[sample_cols].head(10).to_string())
-    
+    logger.info(f"Geocoded (via Nominatim fallback): {dest_df['latitude'].notna().sum() - lookup_success}")
+    logger.info(f"Total geocoded: {dest_df['latitude'].notna().sum()}")
+    logger.info("\nSites by type:")
+    print(dest_df['type'].value_counts().to_string())
+
+    sample_cols = [name_column, 'postcode', 'latitude', 'longitude']
+    logger.info("\nSample sites:")
+    print(dest_df[sample_cols].head(10).to_string())
+
+    return dest_df
+
+
+
+def prepare_hospital_data():
+    """Prepare and geocode hospital registry."""
+    hospital_df = geocode_registry(
+        registry_data=FALLBACK_HOSPITAL_REGISTRY,
+        name_column='hospital_name',
+        output_file=HOSPITAL_DATA_FILE,
+        destination_label='Hospital Sites',
+    )
+
+    if hospital_df is not None and 'trust_ods_code' in hospital_df.columns:
+        logger.info(f"Trusts represented: {hospital_df['trust_ods_code'].nunique()}")
+
     return hospital_df
+
+
+def prepare_university_data():
+    """Prepare and geocode university registry."""
+    return geocode_registry(
+        registry_data=FALLBACK_UNIVERSITY_REGISTRY,
+        name_column='university_name',
+        output_file=UNIVERSITY_DATA_FILE,
+        destination_label='Universities',
+    )
 
 if __name__ == "__main__":
     hospital_data = prepare_hospital_data()
-    if hospital_data is not None:
-        logger.info(f"\nSuccess! Prepared {len(hospital_data)} hospital sites")
-        logger.info(f"\nSample:\n{hospital_data[['hospital_name', 'postcode', 'latitude', 'longitude']].head()}")
-    else:
+    university_data = prepare_university_data()
+
+    if hospital_data is None or university_data is None:
         logger.error("Failed to prepare hospital data")
         sys.exit(1)
+
+    logger.info(f"\nSuccess! Prepared {len(hospital_data)} hospital sites")
+    logger.info(f"Success! Prepared {len(university_data)} university sites")

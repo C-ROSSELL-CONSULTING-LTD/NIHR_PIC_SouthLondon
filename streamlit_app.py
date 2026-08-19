@@ -14,6 +14,9 @@ import sys
 import logging
 from pathlib import Path
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from config import HEALTH_METRIC_REGISTRY
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -384,6 +387,8 @@ def load_data():
     try:
         gp_data = pd.read_csv(data_dir / "gp_practices_geocoded.csv")
         hospital_data = pd.read_csv(data_dir / "hospital_sites_geocoded.csv")
+        universities_file = data_dir / "universities_geocoded.csv"
+        universities_data = pd.read_csv(universities_file) if universities_file.exists() else None
         msoa_dementia = pd.read_csv(data_dir / "msoa_dementia_summary.csv")
 
         # Normalize optional IMD enrichment fields when present.
@@ -470,6 +475,7 @@ def load_data():
         return {
             'gp': gp_data,
             'hospitals': hospital_data,
+            'universities': universities_data,
             'msoa_dementia': msoa_dementia,
             'travel_times': travel_times,
             'dementia': dementia_data,
@@ -488,6 +494,14 @@ def get_hospital_list(hospitals_df):
     """Extract unique hospital sites for filtering."""
     if hospitals_df is not None and 'hospital_name' in hospitals_df.columns:
         return sorted(hospitals_df['hospital_name'].unique().tolist())
+    return []
+
+
+@st.cache_data
+def get_university_list(universities_df):
+    """Extract unique universities for filtering."""
+    if universities_df is not None and 'university_name' in universities_df.columns:
+        return sorted(universities_df['university_name'].unique().tolist())
     return []
 
 
@@ -573,6 +587,7 @@ def build_gp_size_slider_options(min_size, max_size):
 def create_map(
     gp_data,
     hospital_data,
+    university_data=None,
     msoa_dementia=None,
     msoa_geojson=None,
     icb_geojsons=None,
@@ -581,8 +596,10 @@ def create_map(
     msoa_metric="density_65plus",
     highlighted_practices=None,
     highlighted_hospitals=None,
+    highlighted_universities=None,
     show_gp_practices=True,
     show_hospitals=True,
+    show_universities=True,
     min_lat=51.3,
     max_lat=51.55,
     min_lon=-0.35,
@@ -594,6 +611,7 @@ def create_map(
         highlighted_practices: Set of practice_code_gp values to highlight in green
         show_gp_practices: Toggle GP practices layer visibility
         show_hospitals: Toggle hospitals layer visibility
+        show_universities: Toggle universities layer visibility
         show_icb_boundaries: Toggle ICB boundary layer visibility
         icb_geojsons: Dict of ICB boundary GeoJSON objects
     """
@@ -605,6 +623,8 @@ def create_map(
         highlighted_practices = set()
     if highlighted_hospitals is None:
         highlighted_hospitals = set()
+    if highlighted_universities is None:
+        highlighted_universities = set()
 
     m = folium.Map(
         location=[center_lat, center_lon],
@@ -677,6 +697,10 @@ def create_map(
                 )
                 if pd.notna(row.get('imd_score_raw')):
                     popup_text += f"<br>IMD score (raw): {float(row.get('imd_score_raw')):.3f}"
+                for metric in HEALTH_METRIC_REGISTRY:
+                    col_name = f"{metric['key']}_value"
+                    if col_name in row.index and pd.notna(row.get(col_name)):
+                        popup_text += f"<br>{metric['label']}: {float(row.get(col_name)):.2f}%"
                 
                 # Highlight practices in search results (GDS colors)
                 is_highlighted = row.get('practice_code_gp') in highlighted_practices
@@ -732,6 +756,30 @@ def create_map(
         
         hosp_layer.add_to(m)
 
+    # --- Universities ---
+    if university_data is not None and len(university_data) > 0:
+        uni_layer = folium.FeatureGroup(name="🎓 Universities", show=show_universities)
+        for _, row in university_data.iterrows():
+            if pd.notna(row.get('latitude')) and pd.notna(row.get('longitude')):
+                popup_text = (
+                    f"<b>{row.get('university_name', 'University')}</b><br>"
+                    f"Postcode: {row.get('postcode', 'N/A')}"
+                )
+
+                is_highlighted = row.get('university_name') in highlighted_universities
+                icon_color = 'lightgreen' if is_highlighted else 'blue'
+                icon = folium.Icon(color=icon_color, icon='education')
+
+                folium.Marker(
+                    location=[row['latitude'], row['longitude']],
+                    popup=folium.Popup(popup_text, max_width=280),
+                    tooltip=row.get('university_name', 'University'),
+                    icon=icon,
+                ).add_to(uni_layer)
+                all_bounds.append([row['latitude'], row['longitude']])
+
+        uni_layer.add_to(m)
+
     # Fit map to all visible markers
     if len(all_bounds) > 1:
         m.fit_bounds(all_bounds, padding=(50, 50))
@@ -766,6 +814,7 @@ def main():
         **Expected files:**
         - `gp_practices_geocoded.csv`
         - `hospital_sites_geocoded.csv`
+        - `universities_geocoded.csv` (optional)
         - `travel_times_optimized.csv` (optional)
         - `dementia_by_practice.csv` (optional)
         - `gp_age_sex_cohorts_long.csv` (optional, for cohort filters)
@@ -801,7 +850,8 @@ def main():
     with tab_map:
         
         # Get data for hospital/ICB lookups
-        hospital_list = sorted(data['travel_times']['hospital_name'].unique().tolist()) if data['travel_times'] is not None else []
+        hospital_list = get_hospital_list(data['hospitals'])
+        university_list = get_university_list(data.get('universities'))
 
         # Build ICB / trust lookups from hospital data
         hosp_df = data['hospitals'] if data['hospitals'] is not None else pd.DataFrame()
@@ -960,6 +1010,23 @@ def main():
                     default=icb_hosp_list[:2] if icb_hosp_list else [],
                 )
 
+            selected_universities = st.multiselect(
+                "Universities:",
+                university_list,
+                default=university_list[:2] if university_list else [],
+            )
+
+            show_hospitals_map = st.checkbox(
+                "Show hospital layer",
+                value=True,
+                key="pic_show_hospitals_map_toggle",
+            )
+            show_universities_map = st.checkbox(
+                "Show universities layer",
+                value=True,
+                key="pic_show_universities_map_toggle",
+            )
+
             # Travel
             st.markdown("**Travel**")
             transport_modes = st.multiselect(
@@ -970,20 +1037,51 @@ def main():
             )
             max_travel_time = st.slider("Max time (min):", min_value=15, max_value=120, value=45, step=5, label_visibility="collapsed")
 
-            # Disease
-            st.markdown("**Disease**")
-            disease_type = st.radio(
-                "Focus:",
-                ["None", "🧠 Dementia", "🩺 Diabetes"],
-                horizontal=True,
-                label_visibility="collapsed"
-            )
+            # Disease & Health Metrics: single focus dropdown + contextual second box
+            st.markdown("**Disease & Health Metrics**")
+            available_metrics = [
+                m for m in HEALTH_METRIC_REGISTRY
+                if f"{m['key']}_value" in gp_icb_filtered.columns
+            ]
+            metric_label_to_key = {m['label']: m['key'] for m in available_metrics}
+
+            focus_options = ["None", "🧠 Dementia", "🩺 Diabetes"] + [f"📋 {m['label']}" for m in available_metrics]
+            disease_type = st.selectbox("Focus:", focus_options, label_visibility="collapsed", key="pic_focus_select")
+
             dementia_subtype = None
             diabetes_subtype = None
+            qof_metric_key = None
+            qof_metric_range = None
+
             if disease_type == "🧠 Dementia":
                 dementia_subtype = st.radio("Type:", ["65+ Years", "Under 65", "Total"], horizontal=True, label_visibility="collapsed")
             elif disease_type == "🩺 Diabetes":
                 diabetes_subtype = st.radio("Type:", ["Type 1", "Type 2", "Total"], horizontal=True, label_visibility="collapsed")
+            elif disease_type.startswith("📋 "):
+                qof_label = disease_type[2:]
+                qof_metric_key = metric_label_to_key[qof_label]
+                col_name = f"{qof_metric_key}_value"
+                metric_series = pd.to_numeric(gp_icb_filtered[col_name], errors='coerce')
+                if metric_series.notna().any():
+                    m_min = float(round(metric_series.min(), 3))
+                    m_max = float(round(metric_series.max(), 3))
+                    if m_min < m_max:
+                        qof_metric_range = st.slider(
+                            "Range:",
+                            min_value=m_min,
+                            max_value=m_max,
+                            value=(m_min, m_max),
+                            step=0.01,
+                            key=f"pic_metric_range_{qof_metric_key}",
+                            label_visibility="collapsed",
+                        )
+                    else:
+                        st.caption(f"{qof_label}: constant value ({m_min}) — filter skipped")
+                else:
+                    st.caption(f"{qof_label}: no data available for selected practices")
+
+            if not available_metrics:
+                st.caption("QOF metric columns not found. Run pipeline/04c_enrich_gp_health_metrics.py.")
 
             # Cohort filters (always applied in PIC Finder)
             st.markdown("**Cohort**")
@@ -1022,12 +1120,15 @@ def main():
 
             # Ranking
             st.markdown("**Ranking**")
-            if disease_type == "None":
+            if disease_type in ("None",) or disease_type.startswith("📋 "):
                 disease_weight = 0
                 travel_weight = 100
                 disease_weight_norm = 0
                 travel_weight_norm = 1
-                st.caption("🚗 100% travel (no disease selected)")
+                if disease_type == "None":
+                    st.caption("🚗 100% travel (no disease selected)")
+                else:
+                    st.caption("🚗 100% travel (QOF metrics are filters, not ranked)")
             else:
                 disease_weight_slider = st.slider(
                     "Disease %:",
@@ -1128,14 +1229,35 @@ def main():
                 # Exclude practices with zero disease count when disease ranking is active
                 if disease_weight_norm > 0:
                     results = results[results[disease_col_name] > 0]
-            
-            # Calculate travel times to selected hospitals
-            if travel_times_df is not None and len(selected_hospitals) > 0:
-                hospital_times = travel_times_df[travel_times_df['hospital_name'].isin(selected_hospitals)].copy()
+
+            elif qof_metric_key is not None:
+                col_name = f"{qof_metric_key}_value"
+                if col_name in gp_df.columns and qof_metric_range is not None:
+                    results = results.merge(gp_df[['practice_code_gp', col_name]], on='practice_code_gp', how='left')
+                    metric_vals = pd.to_numeric(results[col_name], errors='coerce')
+                    results = results[
+                        metric_vals.isna() |
+                        ((metric_vals >= qof_metric_range[0]) & (metric_vals <= qof_metric_range[1]))
+                    ]
+                    disease_col_name = col_name
+
+            # Calculate travel times to selected destinations (hospitals and/or universities)
+            selected_destinations = set(selected_hospitals) | set(selected_universities)
+            if travel_times_df is not None and len(selected_destinations) > 0:
+                if 'destination_name' in travel_times_df.columns:
+                    destination_times = travel_times_df[
+                        travel_times_df['destination_name'].isin(selected_destinations)
+                    ].copy()
+                elif 'hospital_name' in travel_times_df.columns:
+                    destination_times = travel_times_df[
+                        travel_times_df['hospital_name'].isin(selected_hospitals)
+                    ].copy()
+                else:
+                    destination_times = pd.DataFrame()
                 
                 practice_times = []
                 for practice_code in results['practice_code_gp'].unique():
-                    prac_data = hospital_times[hospital_times['practice_code'] == practice_code]
+                    prac_data = destination_times[destination_times['practice_code'] == practice_code]
                     
                     best_time = float('inf')
                     transport_used = None
@@ -1203,6 +1325,7 @@ def main():
             map_obj = create_map(
                 gp_data=gp_icb_filtered,
                 hospital_data=data['hospitals'],
+                university_data=data.get('universities'),
                 msoa_dementia=data.get('msoa_dementia'),
                 msoa_geojson=data.get('msoa_geojson'),
                 icb_geojsons=data.get('icb_geojsons'),
@@ -1211,8 +1334,10 @@ def main():
                 msoa_metric="density_65plus",
                 highlighted_practices=highlighted_gp_codes,
                 highlighted_hospitals=set(selected_hospitals) if len(selected_hospitals) > 0 else set(),
+                highlighted_universities=set(selected_universities) if len(selected_universities) > 0 else set(),
                 show_gp_practices=True,
-                show_hospitals=True,
+                show_hospitals=show_hospitals_map,
+                show_universities=show_universities_map,
             )
 
             # If results exist, show toggle; otherwise just map
@@ -1249,6 +1374,8 @@ def main():
                     'TOTAL_POPULATION': 'Population',
                     'imd_score_raw': 'IMD score (raw)',
                 }
+                for metric in HEALTH_METRIC_REGISTRY:
+                    rename_map[f"{metric['key']}_value"] = f"{metric['label']} (%)"
                 if disease_col_name is not None:
                     if disease_col_name == 'DEMENTIA_REGISTER_65_PLUS':
                         rename_map[disease_col_name] = 'Register (65+)'
@@ -1300,6 +1427,8 @@ def main():
                                 df_display[col] = df_display[col].apply(lambda x: f"{int(x):,}" if pd.notna(x) else "N/A")
                         elif 'Register' in col or 'Cases' in col or 'Travel' in col:
                             df_display[col] = df_display[col].apply(lambda x: f"{int(x)}" if pd.notna(x) else "N/A")
+                        elif col.endswith('(%)') or col == 'IMD score (raw)':
+                            df_display[col] = df_display[col].apply(lambda x: f"{x:.2f}" if pd.notna(x) else "N/A")
                     st.dataframe(df_display, width="stretch", hide_index=True, height=900)
                     csv = display_df.to_csv(index=False, float_format='%.2f')
                     st.download_button(
@@ -1323,13 +1452,15 @@ def main():
         st.markdown("---")
         
         # Overlay settings for this tab
-        settings_col1, settings_col2, settings_col3 = st.columns(3)
+        settings_col1, settings_col2, settings_col3, settings_col4 = st.columns(4)
         with settings_col1:
             show_msoa_overlay = st.checkbox("Show MSOA Overlay", value=True, key="disease_msoa_toggle")
         with settings_col2:
             show_gp_practices = st.checkbox("Show GP Practices", value=True, key="disease_show_gp_toggle")
         with settings_col3:
             show_hospitals = st.checkbox("Show Hospital Sites", value=True, key="disease_show_hospitals_toggle")
+        with settings_col4:
+            show_universities = st.checkbox("Show Universities", value=True, key="disease_show_universities_toggle")
         
         st.markdown("---")
         
@@ -1347,6 +1478,7 @@ def main():
         disease_map = create_map(
             gp_data=data['gp'],
             hospital_data=data['hospitals'],
+            university_data=data.get('universities'),
             msoa_dementia=data.get('msoa_dementia'),
             msoa_geojson=data.get('msoa_geojson'),
             icb_geojsons=data.get('icb_geojsons'),
@@ -1355,6 +1487,7 @@ def main():
             msoa_metric=msoa_metric,
             show_gp_practices=show_gp_practices,
             show_hospitals=show_hospitals,
+            show_universities=show_universities,
         )
         st_folium(disease_map, width="100%")
 
@@ -1363,6 +1496,7 @@ def main():
         - **Colour shading**: MSOA-level disease prevalence — darker = higher
         - **Blue circles**: GP Practices
         - **Red markers**: NHS Hospital Sites
+        - **Blue markers**: University Sites
         """)
     
     # ========================================================================
@@ -1373,7 +1507,7 @@ def main():
         st.markdown("## Data explorer")
         st.caption("Tables below are sortable (click column headers), searchable, and filterable. Use the filters below each table to narrow results.")
         
-        tab1, tab2, tab3 = st.tabs(["GP Practices", "Hospital Sites", "Travel Times"])
+        tab1, tab2, tab3, tab4 = st.tabs(["GP Practices", "Hospital Sites", "Universities", "Travel Times"])
         
         with tab1:
             st.markdown("### GP practices dataset")
@@ -1453,6 +1587,37 @@ def main():
                 st.dataframe(hosp_df_display, width="stretch", use_container_width=True, height=600)
         
         with tab3:
+            st.markdown("### Universities dataset")
+            if data.get('universities') is not None:
+                uni_df_display = data['universities'].copy()
+                st.write(f"**Total Records:** {len(uni_df_display)}")
+
+                filter_col1, filter_col2 = st.columns(2)
+                with filter_col1:
+                    if 'type' in uni_df_display.columns:
+                        uni_type_filter = st.multiselect(
+                            "Filter by Type:",
+                            options=sorted(uni_df_display['type'].dropna().unique()),
+                            key="uni_type_filter"
+                        )
+                    else:
+                        uni_type_filter = []
+                with filter_col2:
+                    uni_name_filter = st.text_input("Filter by name contains:", key="uni_name_filter")
+
+                if uni_type_filter:
+                    uni_df_display = uni_df_display[uni_df_display['type'].isin(uni_type_filter)]
+                if uni_name_filter:
+                    uni_df_display = uni_df_display[
+                        uni_df_display['university_name'].astype(str).str.contains(uni_name_filter, case=False, na=False)
+                    ]
+
+                st.caption(f"Showing {len(uni_df_display)} of {len(data['universities'])} records")
+                st.dataframe(uni_df_display, width="stretch", use_container_width=True, height=600)
+            else:
+                st.info("Universities data not yet generated. Run pipeline/01_get_location_data.py.")
+
+        with tab4:
             st.markdown("### Travel times data")
             if data['travel_times'] is not None:
                 travel_df_display = data['travel_times'].copy()
@@ -1461,44 +1626,66 @@ def main():
                 # Filters
                 filter_col1, filter_col2, filter_col3 = st.columns(3)
                 with filter_col1:
-                    if 'hospital_name' in travel_df_display.columns:
-                        hospital_filter = st.multiselect(
+                    if 'destination_name' in travel_df_display.columns:
+                        destination_filter = st.multiselect(
+                            "Filter by Destination:",
+                            options=sorted(travel_df_display['destination_name'].dropna().unique()),
+                            key="travel_destination_filter"
+                        )
+                    elif 'hospital_name' in travel_df_display.columns:
+                        destination_filter = st.multiselect(
                             "Filter by Hospital:",
-                            options=sorted(travel_df_display['hospital_name'].unique()),
+                            options=sorted(travel_df_display['hospital_name'].dropna().unique()),
                             key="travel_hosp_filter"
                         )
                     else:
-                        hospital_filter = []
+                        destination_filter = []
                 with filter_col2:
+                    if 'destination_type' in travel_df_display.columns:
+                        destination_type_filter = st.multiselect(
+                            "Filter by Destination Type:",
+                            options=sorted(travel_df_display['destination_type'].dropna().unique()),
+                            key="travel_destination_type_filter"
+                        )
+                    else:
+                        destination_type_filter = []
+                with filter_col3:
                     if 'travel_time_transit_minutes' in travel_df_display.columns:
-                        transit_min = int(travel_df_display['travel_time_transit_minutes'].min())
-                        transit_max = int(travel_df_display['travel_time_transit_minutes'].max())
+                        transit_series = pd.to_numeric(travel_df_display['travel_time_transit_minutes'], errors='coerce').dropna()
+                        transit_min = int(transit_series.min()) if len(transit_series) > 0 else 0
+                        transit_max = int(transit_series.max()) if len(transit_series) > 0 else 0
                         transit_range = st.slider(
                             "Transit time (min):",
                             min_value=transit_min,
                             max_value=transit_max,
                             value=(transit_min, transit_max),
                             key="travel_transit_filter"
-                        )
+                        ) if transit_max > transit_min else None
                     else:
                         transit_range = None
-                with filter_col3:
+
+                filter_col4 = st.columns(1)[0]
+                with filter_col4:
                     if 'travel_time_walking_minutes' in travel_df_display.columns:
-                        walk_min = int(travel_df_display['travel_time_walking_minutes'].min())
-                        walk_max = int(travel_df_display['travel_time_walking_minutes'].max())
+                        walk_series = pd.to_numeric(travel_df_display['travel_time_walking_minutes'], errors='coerce').dropna()
+                        walk_min = int(walk_series.min()) if len(walk_series) > 0 else 0
+                        walk_max = int(walk_series.max()) if len(walk_series) > 0 else 0
                         walk_range = st.slider(
                             "Walking time (min):",
                             min_value=walk_min,
                             max_value=walk_max,
                             value=(walk_min, walk_max),
                             key="travel_walk_filter"
-                        )
+                        ) if walk_max > walk_min else None
                     else:
                         walk_range = None
                 
                 # Apply filters
-                if hospital_filter:
-                    travel_df_display = travel_df_display[travel_df_display['hospital_name'].isin(hospital_filter)]
+                if destination_filter:
+                    destination_col = 'destination_name' if 'destination_name' in travel_df_display.columns else 'hospital_name'
+                    travel_df_display = travel_df_display[travel_df_display[destination_col].isin(destination_filter)]
+                if destination_type_filter:
+                    travel_df_display = travel_df_display[travel_df_display['destination_type'].isin(destination_type_filter)]
                 if transit_range is not None:
                     travel_df_display = travel_df_display[
                         (travel_df_display['travel_time_transit_minutes'] >= transit_range[0]) &
