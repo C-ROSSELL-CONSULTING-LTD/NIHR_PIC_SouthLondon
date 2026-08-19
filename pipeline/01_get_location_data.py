@@ -324,6 +324,9 @@ def geocode_registry(registry_data, name_column, output_file, destination_label)
             if not address:
                 address = f"{row.get(name_column, '')}, {row.get('postcode', '')}, London"
             lat, lon = geocode_address(address)
+            if not (lat and lon) and row.get('postcode'):
+                # Institution names can confuse Nominatim; retry with postcode only
+                lat, lon = geocode_address(f"{row['postcode']}, London, UK")
             if lat and lon:
                 dest_df.at[idx, 'latitude'] = lat
                 dest_df.at[idx, 'longitude'] = lon

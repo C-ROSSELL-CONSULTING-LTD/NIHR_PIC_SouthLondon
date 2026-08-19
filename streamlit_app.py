@@ -1051,7 +1051,6 @@ def main():
             dementia_subtype = None
             diabetes_subtype = None
             qof_metric_key = None
-            qof_metric_range = None
 
             if disease_type == "🧠 Dementia":
                 dementia_subtype = st.radio("Type:", ["65+ Years", "Under 65", "Total"], horizontal=True, label_visibility="collapsed")
@@ -1060,25 +1059,7 @@ def main():
             elif disease_type.startswith("📋 "):
                 qof_label = disease_type[2:]
                 qof_metric_key = metric_label_to_key[qof_label]
-                col_name = f"{qof_metric_key}_value"
-                metric_series = pd.to_numeric(gp_icb_filtered[col_name], errors='coerce')
-                if metric_series.notna().any():
-                    m_min = float(round(metric_series.min(), 3))
-                    m_max = float(round(metric_series.max(), 3))
-                    if m_min < m_max:
-                        qof_metric_range = st.slider(
-                            "Range:",
-                            min_value=m_min,
-                            max_value=m_max,
-                            value=(m_min, m_max),
-                            step=0.01,
-                            key=f"pic_metric_range_{qof_metric_key}",
-                            label_visibility="collapsed",
-                        )
-                    else:
-                        st.caption(f"{qof_label}: constant value ({m_min}) — filter skipped")
-                else:
-                    st.caption(f"{qof_label}: no data available for selected practices")
+                st.caption("Recorded prevalence is shown in the results table.")
 
             if not available_metrics:
                 st.caption("QOF metric columns not found. Run pipeline/04c_enrich_gp_health_metrics.py.")
@@ -1232,14 +1213,10 @@ def main():
 
             elif qof_metric_key is not None:
                 col_name = f"{qof_metric_key}_value"
-                if col_name in gp_df.columns and qof_metric_range is not None:
+                if col_name in gp_df.columns:
                     results = results.merge(gp_df[['practice_code_gp', col_name]], on='practice_code_gp', how='left')
-                    metric_vals = pd.to_numeric(results[col_name], errors='coerce')
-                    results = results[
-                        metric_vals.isna() |
-                        ((metric_vals >= qof_metric_range[0]) & (metric_vals <= qof_metric_range[1]))
-                    ]
-                    disease_col_name = col_name
+                    st.session_state['pic_prevalence_col'] = col_name
+                    disease_col_name = None
 
             # Calculate travel times to selected destinations (hospitals and/or universities)
             selected_destinations = set(selected_hospitals) | set(selected_universities)
@@ -1828,6 +1805,26 @@ def main():
         - **Latest report:** [NDA 2025-26 Quarterly Report Q3](https://digital.nhs.uk/data-and-information/publications/statistical/national-diabetes-audit/core-q3-25-26/national-diabetes-audit-nda-2025-26-quarterly-report-for-england-integrated-care-board-icb-primary-care-network-pcn-and-gp-practice)
         - **Update frequency:** Quarterly
         - **Format:** Excel workbook with separate sheets for Type 1, Type 2, and other diabetes
+
+        #### Fingertips GP Health Metrics
+
+        **Source:** [OHID Fingertips](https://fingertips.phe.org.uk/), accessed through the [`fingertips_py`](https://fingertips-py.readthedocs.io/en/latest/) API client
+        - **Geography:** General Practice, Fingertips area type 7
+        - **Join:** NHS GP ODS practice code (`practice_code_gp`) to Fingertips `Area Code`
+        - **Reporting period:** Latest available QOF period, currently 2024/25
+        - **Metrics:** Asthma, atrial fibrillation, CHD, CKD, COPD, cancer, depression, epilepsy, heart failure, heart failure with LVSD, hypertension, learning disability, mental health/SMI, non-diabetic hyperglycaemia, obesity, osteoporosis, PAD, palliative/supportive care, rheumatoid arthritis, smoking, and stroke
+        - **Interpretation:** Values are recorded QOF prevalence percentages, not estimates of undiagnosed population prevalence
+        - **Subtypes:** QOF metrics use the available practice-level `Persons / All ages` row; Dementia and Diabetes retain their dedicated age/type subtypes
+        - **Coverage:** 322 of 327 South London practices matched in the current extraction (98.5%)
+
+        #### Index of Multiple Deprivation
+
+        **Source:** [OHID Fingertips — IMD 2025](https://fingertips.phe.org.uk/)
+        - **Indicator:** `94240`, Deprivation score (IMD 2025)
+        - **Geography:** General Practice, Fingertips area type 7
+        - **Join:** NHS GP ODS practice code to Fingertips `Area Code`
+        - **Interpretation:** Raw deprivation score retained; the application does not calculate a local decile
+        - **Coverage:** 322 of 327 South London practices matched in the current extraction (98.5%)
         
         ---
         
