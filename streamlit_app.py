@@ -759,7 +759,8 @@ def age_band_range_to_values(age_options, age_start, age_end):
     selected_bands = []
     for age_band in age_options:
         band_start = age_band_lower_bound(age_band)
-        if band_start >= lower_start and band_start < upper_end:
+        band_end = age_band_upper_bound(age_band)
+        if band_start >= lower_start and band_end <= upper_end:
             selected_bands.append(age_band)
 
     return selected_bands
@@ -1109,16 +1110,11 @@ def main():
                     gp_size_max_bound = int(gp_size_series.max())
                     gp_size_options = build_gp_size_slider_options(gp_size_min_bound, gp_size_max_bound)
 
-                    if gp_size_min_bound <= 10000 <= gp_size_max_bound:
-                        gp_size_min_default = 10000
-                    else:
-                        gp_size_min_default = min(gp_size_options, key=lambda x: abs(x - 10000))
-
                     if gp_size_min_bound < gp_size_max_bound:
                         gp_size_range = st.select_slider(
                             "Practice population range:",
                             options=gp_size_options,
-                            value=(gp_size_min_default, gp_size_max_bound),
+                            value=(gp_size_min_bound, gp_size_max_bound),
                             format_func=lambda x: f"{x:,}",
                             label_visibility="collapsed",
                         )
