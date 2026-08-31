@@ -144,6 +144,7 @@ def enrich_gp_with_imd_raw() -> pd.DataFrame:
         gp = gp.drop(columns=drop_cols)
 
     enriched = gp.merge(imd, on="practice_code_gp", how="left")
+    enriched["imd_score_raw"] = pd.to_numeric(enriched["imd_score_raw"], errors="coerce").round().astype("Int64")
 
     # Local interpretation fields are computed relative to the currently matched GP set.
     score = pd.to_numeric(enriched["imd_score_raw"], errors="coerce")

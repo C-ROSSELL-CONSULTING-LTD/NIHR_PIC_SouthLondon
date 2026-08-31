@@ -1321,7 +1321,7 @@ def main():
             st.session_state['pic_prevalence_col'] = None
             st.session_state['pic_diabetes_proxy_mode'] = False
 
-            # Always apply cohort filter first.
+            # Apply cohort filter only when the user has narrowed the cohort.
             if cohort_df is not None and len(cohort_df) > 0 and selected_sexes and selected_age_bands:
                 cohort_filtered = cohort_df[
                     cohort_df['SEX'].isin(selected_sexes) &
@@ -1336,8 +1336,6 @@ def main():
 
                 results = results.merge(cohort_by_practice, on='practice_code_gp', how='inner')
                 results = results[results['selected_cohort_population'] > 0]
-            else:
-                results = pd.DataFrame()
             
             # Filter by disease prevalence
             if disease_type == "Dementia" and dementia_df is not None:
@@ -1393,6 +1391,8 @@ def main():
 
             # Calculate travel times to selected destinations (hospitals and/or universities)
             selected_destinations = set(selected_hospitals) | set(selected_universities)
+            if not selected_destinations:
+                selected_destinations = set(hospital_list) | set(university_list)
             if travel_times_df is not None and len(selected_destinations) > 0:
                 if 'destination_name' in travel_times_df.columns:
                     destination_times = travel_times_df[

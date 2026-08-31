@@ -106,6 +106,103 @@ def valid_journey_coverage(df):
     return float(valid_mask.mean())
 
 
+def journey_coverage_breakdown(df):
+    """Return coverage metrics that separate valid, no-route, and missing values."""
+    if df is None or df.empty:
+        return {
+            "rows": 0,
+            "positive_rows": 0,
+            "no_route_rows": 0,
+            "missing_rows": 0,
+            "positive_coverage": 0.0,
+            "query_coverage": 0.0,
+        }
+
+    mode_cols = [
+        'travel_time_car_minutes',
+        'travel_time_transit_minutes',
+        'travel_time_walking_minutes',
+        'closest_travel_minutes',
+    ]
+    available_cols = [c for c in mode_cols if c in df.columns]
+    if not available_cols:
+        return {
+            "rows": len(df),
+            "positive_rows": 0,
+            "no_route_rows": 0,
+            "missing_rows": len(df),
+            "positive_coverage": 0.0,
+            "query_coverage": 0.0,
+        }
+
+    numeric = {col: pd.to_numeric(df[col], errors='coerce') for col in available_cols}
+    positive_mask = pd.Series(False, index=df.index)
+    any_value_mask = pd.Series(False, index=df.index)
+    no_route_mask = pd.Series(False, index=df.index)
+
+    for series in numeric.values():
+        any_value_mask = any_value_mask | series.notna()
+        positive_mask = positive_mask | (series > 0)
+        no_route_mask = no_route_mask | (series == -1)
+
+    return {
+        "rows": len(df),
+        "positive_rows": int(positive_mask.sum()),
+        "no_route_rows": int(no_route_mask.sum()),
+        "missing_rows": int((~any_value_mask).sum()),
+        "positive_coverage": float(positive_mask.mean()),
+        "query_coverage": float(any_value_mask.mean()),
+    }
+
+
+def merge_travel_time_outputs(existing_df, new_df):
+    """Merge rerun results into an existing output without overwriting filled values."""
+    key_cols = ['practice_code', 'destination_name', 'destination_type']
+
+    if existing_df is None or existing_df.empty:
+        return new_df.drop_duplicates(subset=key_cols, keep='last').copy()
+
+    if new_df is None or new_df.empty:
+        return existing_df.drop_duplicates(subset=key_cols, keep='last').copy()
+
+    existing = existing_df.copy()
+    incoming = new_df.copy()
+
+    for frame in (existing, incoming):
+        for col in key_cols:
+            if col in frame.columns:
+                frame[col] = frame[col].astype(str)
+
+    existing = existing.drop_duplicates(subset=key_cols, keep='last')
+    incoming = incoming.drop_duplicates(subset=key_cols, keep='last')
+
+    merged = existing.merge(
+        incoming,
+        on=key_cols,
+        how='outer',
+        suffixes=('_existing', '_new'),
+    )
+
+    for col in sorted(set(existing.columns) | set(incoming.columns)):
+        if col in key_cols:
+            continue
+
+        existing_col = f"{col}_existing"
+        new_col = f"{col}_new"
+
+        if existing_col in merged.columns and new_col in merged.columns:
+            merged[col] = merged[existing_col].combine_first(merged[new_col])
+            merged.drop(columns=[existing_col, new_col], inplace=True)
+        elif existing_col in merged.columns:
+            merged.rename(columns={existing_col: col}, inplace=True)
+        elif new_col in merged.columns:
+            merged.rename(columns={new_col: col}, inplace=True)
+
+    ordered_cols = [col for col in existing.columns if col in merged.columns]
+    ordered_cols += [col for col in incoming.columns if col not in ordered_cols and col in merged.columns]
+    return merged[ordered_cols]
+
+
 def nearest_wednesday_9am(now=None):
     """Return the nearest Wednesday at 09:00 as (YYYYMMDD, HHMM)."""
     current = now or datetime.now()
@@ -261,10 +358,10 @@ def main():
             dest_type = dest_row.get('destination_type', 'Destination')
             cache_key = f"{gp_code}→{dest_type}:{dest_name}"
             
-            # Skip if Transit and Walking both cached (Car is estimated, not queried)
+            # Skip only when both queried modes have a cached result, including explicit no-route sentinels.
             if cache_key in tfl_cache:
                 existing = tfl_cache[cache_key]
-                if all(mode in existing for mode in ['Transit', 'Walking']):
+                if all(mode in existing and existing[mode] is not None for mode in ['Transit', 'Walking']):
                     continue
             
             work_items.append({
@@ -398,7 +495,8 @@ def main():
     logger.info(f"[SAVE] Writing {len(result_df)} results to CSV...")
 
     # Guard against accidental wipe: do not replace an existing dataset with near-empty times.
-    new_coverage = valid_journey_coverage(result_df)
+    coverage = journey_coverage_breakdown(result_df)
+    new_coverage = coverage["positive_coverage"]
     existing_df = None
     existing_coverage = 0.0
     if os.path.exists(OUTPUT_FILE):
@@ -418,27 +516,16 @@ def main():
 
     os.makedirs(os.path.dirname(OUTPUT_FILE) or ".", exist_ok=True)
 
-    key_cols = ['practice_code', 'destination_name', 'destination_type']
     if os.path.exists(OUTPUT_FILE):
         try:
             existing_df = pd.read_csv(OUTPUT_FILE)
         except Exception as e:
-            logger.warning(f"Could not read existing output for append-only write: {e}")
+            logger.warning(f"Could not read existing output for merge write: {e}")
             existing_df = pd.DataFrame()
 
-        if not existing_df.empty and all(col in existing_df.columns for col in key_cols):
-            existing_keys = set(existing_df[key_cols].astype(str).itertuples(index=False, name=None))
-        else:
-            existing_keys = set()
-
-        new_mask = ~result_df[key_cols].astype(str).apply(tuple, axis=1).isin(existing_keys)
-        append_df = result_df[new_mask].copy()
-
-        if append_df.empty:
-            logger.info("[OK] No new rows to append; existing file unchanged")
-        else:
-            append_df.to_csv(OUTPUT_FILE, mode='a', index=False, header=False)
-            logger.info(f"[OK] Appended {len(append_df)} new rows to: {OUTPUT_FILE}")
+        merged_df = merge_travel_time_outputs(existing_df, result_df)
+        merged_df.to_csv(OUTPUT_FILE, index=False)
+        logger.info(f"[OK] Merged and saved {len(merged_df)} rows to: {OUTPUT_FILE}")
     else:
         result_df.to_csv(OUTPUT_FILE, index=False)
         logger.info(f"[OK] Created and saved: {OUTPUT_FILE}")
@@ -448,6 +535,17 @@ def main():
     logger.info("SUMMARY")
     logger.info("=" * 80)
     logger.info(f"Total GP→Destination pairs:     {len(result_df)}")
+    logger.info(
+        f"Query coverage (any value):     {coverage['query_coverage']:.1%} "
+        f"({coverage['rows'] - coverage['missing_rows']:,}/{coverage['rows']:,})"
+    )
+    logger.info(
+        f"Positive coverage (>0 min):      {coverage['positive_coverage']:.1%} "
+        f"({coverage['positive_rows']:,}/{coverage['rows']:,})"
+    )
+    logger.info(
+        f"No-route sentinel rows (-1):     {coverage['no_route_rows']:,}"
+    )
     if 'destination_type' in result_df.columns:
         logger.info("\nPairs by destination type:")
         print(result_df['destination_type'].value_counts().to_string())
