@@ -482,13 +482,26 @@ def load_data(data_version):
     """Load and cache all processed datasets."""
     data_dir = Path(__file__).parent / "data" / "processed"
     boundaries_dir = Path(__file__).parent / "data" / "boundaries"
+
+    def _read_csv_safe(path, required=True):
+        """Read CSV while tolerating occasional malformed lines in large exports."""
+        if not path.exists():
+            if required:
+                raise FileNotFoundError(f"Required data file not found: {path}")
+            return None
+
+        try:
+            return pd.read_csv(path)
+        except pd.errors.ParserError as e:
+            logger.warning(f"ParserError in {path.name}; retrying with bad lines skipped. Original error: {e}")
+            return pd.read_csv(path, on_bad_lines='skip')
     
     try:
-        gp_data = pd.read_csv(data_dir / "gp_practices_geocoded.csv")
-        hospital_data = pd.read_csv(data_dir / "hospital_sites_geocoded.csv")
+        gp_data = _read_csv_safe(data_dir / "gp_practices_geocoded.csv")
+        hospital_data = _read_csv_safe(data_dir / "hospital_sites_geocoded.csv")
         universities_file = data_dir / "universities_geocoded.csv"
-        universities_data = pd.read_csv(universities_file) if universities_file.exists() else None
-        msoa_dementia = pd.read_csv(data_dir / "msoa_dementia_summary.csv")
+        universities_data = _read_csv_safe(universities_file, required=False)
+        msoa_dementia = _read_csv_safe(data_dir / "msoa_dementia_summary.csv")
 
         # Normalize optional IMD enrichment fields when present.
         if 'imd_score_raw' in gp_data.columns:
@@ -497,11 +510,11 @@ def load_data(data_version):
             gp_data['imd_time_period'] = gp_data['imd_time_period'].astype(str).replace('nan', pd.NA)
 
         travel_times_file = data_dir / "travel_times_optimized.csv"
-        travel_times = pd.read_csv(travel_times_file) if travel_times_file.exists() else None
+        travel_times = _read_csv_safe(travel_times_file, required=False)
 
         # Load practice-level dementia data with prevalence calculations
         dementia_file = data_dir / "dementia_by_practice.csv"
-        dementia_data = pd.read_csv(dementia_file) if dementia_file.exists() else None
+        dementia_data = _read_csv_safe(dementia_file, required=False)
         # Standardize column names
         if dementia_data is not None:
             dementia_data['DEMENTIA_TOTAL'] = dementia_data['DEMENTIA_REGISTER_65_PLUS'].fillna(0) + dementia_data['DEMENTIA_REGISTER_0_64'].fillna(0)
@@ -554,14 +567,14 @@ def load_data(data_version):
 
         # Load diabetes data (practice-level)
         diabetes_file = data_dir / "diabetes_by_practice.csv"
-        diabetes_data = pd.read_csv(diabetes_file) if diabetes_file.exists() else None
+        diabetes_data = _read_csv_safe(diabetes_file, required=False)
         # Standardize column names
         if diabetes_data is not None:
             diabetes_data['practice_code_gp'] = diabetes_data['GP code']
 
         # Load age/sex cohorts for PIC Finder cohort filtering
         cohort_file = data_dir / "gp_age_sex_cohorts_long.csv"
-        gp_age_sex_cohorts = pd.read_csv(cohort_file) if cohort_file.exists() else None
+        gp_age_sex_cohorts = _read_csv_safe(cohort_file, required=False)
         if gp_age_sex_cohorts is not None:
             gp_age_sex_cohorts['practice_code_gp'] = gp_age_sex_cohorts['practice_code_gp'].astype(str).str.strip().str.upper()
             gp_age_sex_cohorts['SEX'] = gp_age_sex_cohorts['SEX'].astype(str).str.strip().str.upper()
@@ -584,7 +597,7 @@ def load_data(data_version):
             'icb_geojsons': icb_geojsons,
         }
     except Exception as e:
-        logger.error(f"Error loading data: {e}")
+        logger.error(f"Error loading data from {data_dir}: {e}")
         return None
 
 
