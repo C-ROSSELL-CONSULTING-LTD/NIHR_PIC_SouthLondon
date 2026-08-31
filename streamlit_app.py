@@ -675,6 +675,43 @@ def get_university_list(universities_df):
     return []
 
 
+def normalize_destination_selection(selected_hospitals, selected_universities, hospital_list, university_list):
+    """Map UI destination labels to the names stored in travel-time data."""
+    selected_destinations = set(selected_hospitals) | set(selected_universities)
+    if not selected_destinations:
+        selected_destinations = set(hospital_list) | set(university_list)
+
+    destination_aliases = {
+        "City Uni": "City St George's, University of London",
+    }
+
+    normalized_destinations = set()
+    for destination in selected_destinations:
+        normalized_destinations.add(destination)
+        if destination in destination_aliases:
+            normalized_destinations.add(destination_aliases[destination])
+
+    return normalized_destinations
+
+
+def normalize_icb_selection(icb_choice):
+    """Map UI ICB labels to the values stored in practice data."""
+    icb_map = {
+        "SE London": "NHS South East London Integrated Care Board",
+        "SW London": "NHS South West London Integrated Care Board",
+    }
+    return icb_map.get(icb_choice)
+
+
+def normalize_transport_modes(transport_modes):
+    """Map UI transport labels to the values stored in travel data."""
+    mode_map = {
+        "Transit": "TRANSIT",
+        "Walking": "WALKING",
+    }
+    return {mode_map.get(mode, mode) for mode in transport_modes}
+
+
 def age_band_sort_key(age_band):
     """Sort 5-year age bands numerically, with 95+ at the end."""
     age_band = str(age_band).strip().upper()
@@ -1393,9 +1430,12 @@ def main():
                     disease_col_name = None
 
             # Calculate travel times to selected destinations (hospitals and/or universities)
-            selected_destinations = set(selected_hospitals) | set(selected_universities)
-            if not selected_destinations:
-                selected_destinations = set(hospital_list) | set(university_list)
+            selected_destinations = normalize_destination_selection(
+                selected_hospitals,
+                selected_universities,
+                hospital_list,
+                university_list,
+            )
             if travel_times_df is not None and len(selected_destinations) > 0:
                 if 'destination_name' in travel_times_df.columns:
                     destination_times = travel_times_df[
