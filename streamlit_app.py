@@ -25,7 +25,8 @@ logger = logging.getLogger(__name__)
 def render_distribution_histogram(
     values,
     *,
-    threshold,
+    selected_range=None,
+    threshold=None,
     height=70,
     bins=20,
     bin_width=None,
@@ -40,8 +41,12 @@ def render_distribution_histogram(
     if series.empty:
         return None
 
-    min_v = float(series.min())
-    max_v = float(series.max())
+    finite_series = series[pd.Series(series).replace([float('inf'), float('-inf')], pd.NA).notna()]
+    if finite_series.empty:
+        return None
+
+    min_v = float(finite_series.min())
+    max_v = float(finite_series.max())
 
     if max_v <= min_v:
         max_v = min_v + 1.0
@@ -59,15 +64,27 @@ def render_distribution_histogram(
     if len(bin_edges) < 2:
         bin_edges = np.array([min_v, max_v])
 
-    counts, _ = np.histogram(series.values, bins=bin_edges)
+    bin_edges = bin_edges[np.isfinite(bin_edges)]
+    if len(bin_edges) < 2:
+        return None
+
+    counts, _ = np.histogram(finite_series.values, bins=bin_edges)
 
     hist_df = pd.DataFrame({
         'bin_left': bin_edges[:-1],
         'count': counts.astype(int),
     })
-    hist_df['color'] = hist_df['bin_left'].apply(
-        lambda x: '#d0dff2' if x < threshold else '#003087'
-    )
+    if selected_range is not None:
+        selected_min, selected_max = selected_range
+        hist_df['color'] = hist_df['bin_left'].apply(
+            lambda x: '#003087' if selected_min <= x <= selected_max else '#d0dff2'
+        )
+    elif threshold is not None:
+        hist_df['color'] = hist_df['bin_left'].apply(
+            lambda x: '#d0dff2' if x < threshold else '#003087'
+        )
+    else:
+        hist_df['color'] = '#003087'
 
     chart = (
         alt.Chart(hist_df)
@@ -97,10 +114,22 @@ def render_distribution_histogram(
 
 st.set_page_config(
     page_title="NIHR PIC Mapping - South London",
-    page_icon="🗺️",
+    page_icon="",
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+shared_filters = {}
+
+def update_shared_filters(shared_filters, column, min_val, max_val):
+    """Update the shared filters with new constraints."""
+    shared_filters[column] = (min_val, max_val)
+    return shared_filters
+
+def on_filter_change(column, min_val, max_val):
+    global shared_filters
+    shared_filters = update_shared_filters(shared_filters, column, min_val, max_val)
+    st.experimental_rerun()
 
 # Custom CSS — NIHR brand style (matching rdn.nihr.ac.uk)
 st.markdown("""
@@ -257,16 +286,6 @@ st.markdown("""
         .stMultiSelect span {
             font-size: 12px !important;
         }
-        /* Ensure dropdown/select text is readable (black) */
-        div[data-baseweb="select"] > div,
-        div[data-baseweb="select"] input,
-        div[data-baseweb="popover"] [role="option"],
-        .stSelectbox div[data-baseweb="select"] > div,
-        .stSelectbox div[data-baseweb="select"] span,
-        .stMultiSelect div[data-baseweb="select"] > div,
-        .stMultiSelect div[data-baseweb="select"] span {
-            color: #000000 !important;
-        }
         /* Captions */
         .stCaptionContainer p, small {
             font-size: 11px !important;
@@ -336,13 +355,19 @@ st.markdown("""
             margin-left: 4px;
         }
 
+        .nihr-header,
+        .nihr-header .nihr-logo-text,
+        .nihr-header .nihr-subtitle {
+            color: white !important;
+        }
+
         /* ── Section labels (bold small caps style) ── */
         .nihr-section-label {
             font-size: 11px;
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.8px;
-            color: var(--nihr-blue);
+            color: #666666;
             margin: 10px 0 3px 0;
             display: block;
         }
@@ -350,15 +375,6 @@ st.markdown("""
         /* ── Sidebar (minimal styling, sidebar not used for navigation) ── */
         [data-testid="stSidebar"] {
             background: var(--nihr-white) !important;
-        }
-
-        /* ── Multiselect tags ── */
-        [data-testid="stMultiSelect"] [data-baseweb="tag"] {
-            background-color: var(--nihr-blue) !important;
-        }
-        [data-testid="stMultiSelect"] [data-baseweb="tag"] span,
-        [data-testid="stMultiSelect"] [data-baseweb="tag"] * {
-            color: white !important;
         }
 
         /* ── Primary button → NIHR blue ── */
@@ -379,6 +395,11 @@ st.markdown("""
         a[role="button"] p,
         a[role="button"] span,
         a[role="button"] div {
+            color: white !important;
+        }
+
+        .stButton > button,
+        .stButton > button * {
             color: white !important;
         }
         button:hover,
@@ -436,9 +457,42 @@ st.markdown("""
             color: #ffffff !important;
         }
 
+        /* Keep the control labels in this panel grey instead of blue */
+        .stApp [data-testid="stVerticalBlock"] [data-testid="stWidgetLabel"] p,
+        .stApp [data-testid="stVerticalBlock"] [data-testid="stWidgetLabel"] span,
+        .stApp [data-testid="stVerticalBlock"] [data-testid="stMultiSelect"] [data-baseweb="tag"] button {
+            color: #4f4f4f !important;
+        }
+
+        .stApp [data-testid="stVerticalBlock"] [data-testid="stMultiSelect"] [data-baseweb="tag"] {
+            background-color: #d9d9d9 !important;
+            border: 1px solid #b0b0b0 !important;
+        }
+        .stApp [data-testid="stVerticalBlock"] [data-testid="stMultiSelect"] [data-tag] {
+            background-color: #d9d9d9 !important;
+            border: 1px solid #b0b0b0 !important;
+        }
+        .stApp [data-testid="stVerticalBlock"] [data-testid="stMultiSelect"] [data-tag] [title],
+        .stApp [data-testid="stVerticalBlock"] [data-testid="stMultiSelect"] [data-tag] button,
+        .stApp [data-testid="stVerticalBlock"] [data-testid="stMultiSelect"] [data-tag] svg,
+        .stApp [data-testid="stVerticalBlock"] [data-testid="stMultiSelect"] [data-tag] path {
+            color: #000000 !important;
+            fill: #000000 !important;
+        }
+        .stApp [data-testid="stVerticalBlock"] [data-testid="stMultiSelect"] [data-tag] button {
+            background: transparent !important;
+            border: 0 !important;
+            box-shadow: none !important;
+        }
+        .stApp [data-testid="stVerticalBlock"] [data-testid="stMultiSelect"] [data-tag] button svg,
+        .stApp [data-testid="stVerticalBlock"] [data-testid="stMultiSelect"] [data-tag] button path {
+            stroke: #000000 !important;
+            fill: #000000 !important;
+        }
+
         /* ── Slider ── */
         [data-testid="stSlider"] [data-testid="stThumbValue"] {
-            color: var(--nihr-blue) !important;
+            color: white !important;
         }
 
         /* ── Right-align radio in narrow columns ── */
@@ -490,12 +544,16 @@ def load_data(data_version):
                 raise FileNotFoundError(f"Required data file not found: {path}")
             return None
 
+            shared_filters=None,
         try:
             return pd.read_csv(path)
         except pd.errors.ParserError as e:
             logger.warning(f"ParserError in {path.name}; retrying with bad lines skipped. Original error: {e}")
             return pd.read_csv(path, on_bad_lines='skip')
     
+            if shared_filters:
+                for col, (min_val, max_val) in shared_filters.items():
+                    series = series[(series >= min_val) & (series <= max_val)]
     try:
         gp_data = _read_csv_safe(data_dir / "gp_practices_geocoded.csv")
         hospital_data = _read_csv_safe(data_dir / "hospital_sites_geocoded.csv")
@@ -751,7 +809,7 @@ def create_map(
 
     # --- ICB Boundaries ---
     if show_icb_boundaries and icb_geojsons:
-        icb_layer = folium.FeatureGroup(name="🗺️ ICB Boundaries", show=True)
+        icb_layer = folium.FeatureGroup(name="ICB Boundaries", show=True)
         
         # Define colors for each ICB
         icb_colors = {
@@ -797,7 +855,7 @@ def create_map(
 
     # --- GP Practices ---
     if gp_data is not None and len(gp_data) > 0:
-        gp_layer = folium.FeatureGroup(name="🏥 GP Practices", show=show_gp_practices)
+        gp_layer = folium.FeatureGroup(name="GP Practices", show=show_gp_practices)
         for _, row in gp_data.iterrows():
             if pd.notna(row.get('latitude')) and pd.notna(row.get('longitude')):
                 popup_text = (
@@ -844,7 +902,7 @@ def create_map(
 
     # --- Hospital Sites ---
     if hospital_data is not None and len(hospital_data) > 0:
-        hosp_layer = folium.FeatureGroup(name="🏨 Hospitals", show=show_hospitals)
+        hosp_layer = folium.FeatureGroup(name="Hospitals", show=show_hospitals)
         for _, row in hospital_data.iterrows():
             if pd.notna(row.get('latitude')) and pd.notna(row.get('longitude')):
                 popup_text = (
@@ -870,7 +928,7 @@ def create_map(
 
     # --- Universities ---
     if university_data is not None and len(university_data) > 0:
-        uni_layer = folium.FeatureGroup(name="🎓 Universities", show=show_universities)
+        uni_layer = folium.FeatureGroup(name="Universities", show=show_universities)
         for _, row in university_data.iterrows():
             if pd.notna(row.get('latitude')) and pd.notna(row.get('longitude')):
                 popup_text = (
@@ -921,7 +979,7 @@ def main():
     data = load_data(get_processed_data_version())
     
     if data is None:
-        st.error("❌ Unable to load data. Please ensure processed data files are available in `/data/processed/`")
+        st.error("Unable to load data. Please ensure processed data files are available in `/data/processed/`")
         st.info("""
         **Expected files:**
         - `gp_practices_geocoded.csv`
@@ -948,11 +1006,11 @@ def main():
     
     # Create main navigation tabs
     tab_map, tab_disease, tab_explorer, tab_about, tab_sources = st.tabs([
-        "📍 Interactive Map",
-        "🌍 Disease Map",
-        "📊 Data Explorer",
-        "ℹ️ About",
-        "📚 Sources"
+        "Interactive Map",
+        "Disease Map",
+        "Data Explorer",
+        "About",
+        "Sources"
     ])
     
     # ========================================================================
@@ -1003,6 +1061,7 @@ def main():
 
             # Preserve ICB-scoped baseline for static IMD distribution context.
             gp_icb_scope = gp_icb_filtered.copy()
+            gp_cross_filtered = gp_icb_filtered.copy()
 
             # GP size
             st.markdown("**GP Size**")
@@ -1014,21 +1073,25 @@ def main():
                     gp_size_options = build_gp_size_slider_options(gp_size_min_bound, gp_size_max_bound)
 
                     if gp_size_min_bound <= 10000 <= gp_size_max_bound:
-                        gp_size_default = 10000
+                        gp_size_min_default = 10000
                     else:
-                        gp_size_default = min(gp_size_options, key=lambda x: abs(x - 10000))
+                        gp_size_min_default = min(gp_size_options, key=lambda x: abs(x - 10000))
 
-                    gp_size_min = st.select_slider(
-                        "Minimum practice population:",
-                        options=gp_size_options,
-                        value=gp_size_default,
-                        format_func=lambda x: f"{x:,}",
-                        label_visibility="collapsed",
-                    )
+                    if gp_size_min_bound < gp_size_max_bound:
+                        gp_size_range = st.select_slider(
+                            "Practice population range:",
+                            options=gp_size_options,
+                            value=(gp_size_min_default, gp_size_max_bound),
+                            format_func=lambda x: f"{x:,}",
+                            label_visibility="collapsed",
+                        )
+                    else:
+                        gp_size_range = (gp_size_min_bound, gp_size_max_bound)
+                        st.caption(f"Practice population is fixed at {gp_size_min_bound:,} for the current selection")
 
                     _chart = render_distribution_histogram(
-                        gp_size_series,
-                        threshold=float(gp_size_min),
+                        pd.to_numeric(gp_icb_scope['TOTAL_POPULATION'], errors='coerce'),
+                        selected_range=(float(gp_size_range[0]), float(gp_size_range[1])),
                         height=70,
                         bin_width=1000,
                         x_axis_format='~s',
@@ -1038,8 +1101,15 @@ def main():
                     st.caption(f"Distribution of {_icb_label} GP practices by registered population")
                     st.altair_chart(_chart, width="stretch")
 
-                    gp_icb_filtered = gp_icb_filtered[gp_size_series >= gp_size_min].copy()
-                    st.caption(f"Min size: {gp_size_min:,} | Remaining practices: {len(gp_icb_filtered)}")
+                    gp_cross_filtered = gp_cross_filtered[
+                        (gp_size_series >= gp_size_range[0]) &
+                        (gp_size_series <= gp_size_range[1])
+                    ].copy()
+                    gp_icb_filtered = gp_cross_filtered.copy()
+                    st.caption(
+                        f"Population range: {gp_size_range[0]:,} to {gp_size_range[1]:,} | "
+                        f"Remaining practices: {len(gp_cross_filtered)}"
+                    )
                 else:
                     st.caption("GP size data unavailable for selected scope")
             else:
@@ -1047,112 +1117,58 @@ def main():
 
             # IMD raw score filter
             st.markdown("**IMD (Raw Score)**")
-            if 'imd_score_raw' in gp_icb_filtered.columns:
-                imd_series = pd.to_numeric(gp_icb_filtered['imd_score_raw'], errors='coerce')
+            if 'imd_score_raw' in gp_cross_filtered.columns:
+                imd_series = pd.to_numeric(gp_cross_filtered['imd_score_raw'], errors='coerce')
                 if imd_series.notna().any():
-                    imd_min_bound = float(imd_series.min())
-                    imd_max_bound = float(imd_series.max())
-                    imd_range = st.slider(
-                        "IMD score range:",
-                        min_value=float(round(imd_min_bound, 3)),
-                        max_value=float(round(imd_max_bound, 3)),
-                        value=(float(round(imd_min_bound, 3)), float(round(imd_max_bound, 3))),
-                        step=0.001,
-                        key="pic_imd_range",
-                        label_visibility="collapsed",
-                    )
+                    imd_min_bound = int(imd_series.min().round())
+                    imd_max_bound = int(imd_series.max().round())
+                    if imd_min_bound < imd_max_bound:
+                        imd_range = st.slider(
+                            "IMD score range:",
+                            min_value=imd_min_bound,
+                            max_value=imd_max_bound,
+                            value=(imd_min_bound, imd_max_bound),
+                            step=1,
+                            key="pic_imd_range",
+                            label_visibility="collapsed",
+                        )
+                    else:
+                        imd_range = (imd_min_bound, imd_max_bound)
+                        st.caption(f"IMD score is fixed at {imd_range[0]} for the current selection")
                     include_imd_unmatched = st.checkbox(
                         "Include practices without IMD score",
                         value=True,
                         key="pic_include_imd_unmatched",
                     )
 
-                    if include_imd_unmatched:
-                        gp_icb_filtered = gp_icb_filtered[
-                            imd_series.isna() |
-                            ((imd_series >= imd_range[0]) & (imd_series <= imd_range[1]))
-                        ].copy()
-                    else:
-                        gp_icb_filtered = gp_icb_filtered[
-                            (imd_series >= imd_range[0]) & (imd_series <= imd_range[1])
-                        ].copy()
-
-                    matched_count = pd.to_numeric(gp_icb_filtered.get('imd_score_raw'), errors='coerce').notna().sum()
-                    st.caption(f"IMD filter retained: {len(gp_icb_filtered)} practices ({matched_count} with IMD)")
-                else:
-                    st.caption("IMD score unavailable for selected practices")
-            else:
-                st.caption("IMD score column not found. Run pipeline/04b_enrich_imd_raw.py.")
-
-            # IMD distribution context (mirrors GP size distribution style)
-            st.markdown("**IMD Distribution Context**")
-            if 'imd_score_raw' in gp_icb_scope.columns:
-                imd_context_series = pd.to_numeric(gp_icb_scope['imd_score_raw'], errors='coerce')
-                imd_context_matched = gp_icb_scope.loc[imd_context_series.notna()].copy()
-                if len(imd_context_matched) > 0:
-                    imd_context_values = pd.to_numeric(imd_context_matched['imd_score_raw'], errors='coerce')
-                    # Local interpretation fields fallback if not already persisted by ETL.
-                    if 'imd_local_percentile' not in imd_context_matched.columns:
-                        imd_context_matched['imd_local_percentile'] = (imd_context_values.rank(method='average', pct=True) * 100).round(1)
-                    if 'imd_local_quintile' not in imd_context_matched.columns:
-                        _pct = pd.to_numeric(imd_context_matched['imd_local_percentile'], errors='coerce')
-                        imd_context_matched['imd_local_quintile'] = pd.to_numeric(
-                            pd.qcut(_pct, q=5, labels=[1, 2, 3, 4, 5], duplicates='drop'),
-                            errors='coerce'
-                        ).astype('Int64')
-                    if 'imd_local_rank_note' not in imd_context_matched.columns:
-                        imd_context_matched['imd_local_rank_note'] = (
-                            'Relative within current matched GP dataset (not national IMD deciles)'
-                        )
-
-                    _selected_score = None
-                    if 'selected_gps' in locals() and selected_gps:
-                        _selected_rows = imd_context_matched[imd_context_matched['practice_name'].isin(selected_gps)]
-                        if len(_selected_rows) > 0:
-                            _selected_score = float(pd.to_numeric(_selected_rows['imd_score_raw'], errors='coerce').dropna().iloc[0])
-
-                    _hist = render_distribution_histogram(
-                        imd_context_values,
-                        threshold=float(_selected_score) if _selected_score is not None else float(imd_context_values.median()),
+                    _imd_chart = render_distribution_histogram(
+                        pd.to_numeric(gp_icb_scope['imd_score_raw'], errors='coerce'),
+                        selected_range=(float(imd_range[0]), float(imd_range[1])),
                         height=70,
                         bins=40,
                         x_axis_format='~s',
                         tooltip_label='Practices',
                     )
-
-                    _median = float(imd_context_values.median())
-                    _q1 = float(imd_context_values.quantile(0.25))
-                    _q3 = float(imd_context_values.quantile(0.75))
-                    _iqr = _q3 - _q1
-
-                    _chart_imd = _hist
                     st.caption('Distribution of matched GP IMD raw scores (Fingertips indicator 94240)')
-                    st.altair_chart(_chart_imd, width='stretch')
+                    st.altair_chart(_imd_chart, width='stretch')
 
-                    _sel_pct = None
-                    _sel_quint = None
-                    if _selected_score is not None and 'selected_gps' in locals() and selected_gps:
-                        _selected_rows = imd_context_matched[imd_context_matched['practice_name'].isin(selected_gps)]
-                        if len(_selected_rows) > 0:
-                            _sel_pct = pd.to_numeric(_selected_rows['imd_local_percentile'], errors='coerce').dropna()
-                            _sel_quint = pd.to_numeric(_selected_rows['imd_local_quintile'], errors='coerce').dropna()
+                    if include_imd_unmatched:
+                        gp_cross_filtered = gp_cross_filtered[
+                            imd_series.isna() |
+                            ((imd_series >= imd_range[0]) & (imd_series <= imd_range[1]))
+                        ].copy()
+                    else:
+                        gp_cross_filtered = gp_cross_filtered[
+                            (imd_series >= imd_range[0]) & (imd_series <= imd_range[1])
+                        ].copy()
 
-                    # Fallback: derive local percentile/quintile from selected score when row fields are unavailable.
-                    if _selected_score is not None and (_sel_pct is None or len(_sel_pct) == 0):
-                        _sel_pct_value = float((imd_context_values <= _selected_score).mean() * 100)
-                        _sel_pct = pd.Series([round(_sel_pct_value, 1)])
-                    if _selected_score is not None and (_sel_quint is None or len(_sel_quint) == 0) and _sel_pct is not None and len(_sel_pct) > 0:
-                        _pct_value = float(_sel_pct.iloc[0])
-                        _sel_quint = pd.Series([min(5, max(1, int((_pct_value - 1e-9) // 20) + 1))])
-
-                    _min_v = float(imd_context_values.min())
-                    _max_v = float(imd_context_values.max())
-
+                    gp_icb_filtered = gp_cross_filtered.copy()
+                    matched_count = pd.to_numeric(gp_cross_filtered.get('imd_score_raw'), errors='coerce').notna().sum()
+                    st.caption(f"IMD filter retained: {len(gp_cross_filtered)} practices ({matched_count} with IMD)")
                 else:
-                    st.caption('No IMD values available for matched practices in current filters.')
+                    st.caption("IMD score unavailable for selected practices")
             else:
-                st.caption('IMD score column not found. Run pipeline/04b_enrich_imd_raw.py.')
-
+                st.caption("IMD score column not found. Run pipeline/04b_enrich_imd_raw.py.")
             hosp_scope = st.radio("Level:", ["Hospital", "Trust"], horizontal=True)
             if hosp_scope == "Trust":
                 trust_list = sorted(set(hosp_trust_map.get(h, '') for h in icb_hosp_list if hosp_trust_map.get(h)))
@@ -1186,8 +1202,8 @@ def main():
             st.markdown("**Travel**")
             transport_modes = st.multiselect(
                 "Transport:",
-                ["🚌 Transit", "🚶 Walking"],
-                default=["🚌 Transit", "🚶 Walking"],
+                ["Transit", "Walking"],
+                default=["Transit", "Walking"],
                 label_visibility="collapsed"
             )
             max_travel_time = st.slider("Max time (min):", min_value=15, max_value=120, value=45, step=5, label_visibility="collapsed")
@@ -1200,19 +1216,19 @@ def main():
             ]
             metric_label_to_key = {m['label']: m['key'] for m in available_metrics}
 
-            focus_options = ["None", "🧠 Dementia", "🩺 Diabetes"] + [f"📋 {m['label']}" for m in available_metrics]
+            focus_options = ["None", "Dementia", "Diabetes"] + [m['label'] for m in available_metrics]
             disease_type = st.selectbox("Focus:", focus_options, label_visibility="collapsed", key="pic_focus_select")
 
             dementia_subtype = None
             diabetes_subtype = None
             qof_metric_key = None
 
-            if disease_type == "🧠 Dementia":
+            if disease_type == "Dementia":
                 dementia_subtype = st.radio("Type:", ["65+ Years", "Under 65", "Total"], horizontal=True, label_visibility="collapsed")
-            elif disease_type == "🩺 Diabetes":
+            elif disease_type == "Diabetes":
                 diabetes_subtype = st.radio("Type:", ["Type 1", "Type 2", "Total"], horizontal=True, label_visibility="collapsed")
-            elif disease_type.startswith("📋 "):
-                qof_label = disease_type[2:]
+            elif disease_type in metric_label_to_key:
+                qof_label = disease_type
                 qof_metric_key = metric_label_to_key[qof_label]
                 st.caption("Recorded prevalence is shown in the results table.")
 
@@ -1229,11 +1245,13 @@ def main():
                 sex_options = sorted(cohort_df['SEX'].dropna().unique().tolist())
                 age_options = sorted(cohort_df['AGE_GROUP_5'].dropna().unique().tolist(), key=age_band_sort_key)
 
-                default_sexes = [x for x in ['FEMALE', 'MALE'] if x in sex_options] or sex_options
+                sex_label_map = {'FEMALE': 'Female', 'MALE': 'Male'}
+                sex_display_options = [sex_label_map.get(x, x.title()) for x in sex_options]
+                default_sexes = [sex_label_map.get(x, x.title()) for x in ['FEMALE', 'MALE'] if x in sex_options] or sex_display_options
 
                 selected_sexes = st.multiselect(
                     "Sex:",
-                    options=sex_options,
+                    options=sex_display_options,
                     default=default_sexes,
                     label_visibility="collapsed",
                 )
@@ -1256,15 +1274,15 @@ def main():
 
             # Ranking
             st.markdown("**Ranking**")
-            if disease_type in ("None",) or disease_type.startswith("📋 "):
+            if disease_type in ("None",) or disease_type in metric_label_to_key:
                 disease_weight = 0
                 travel_weight = 100
                 disease_weight_norm = 0
                 travel_weight_norm = 1
                 if disease_type == "None":
-                    st.caption("🚗 100% travel (no disease selected)")
+                    st.caption("100% travel (no disease selected)")
                 else:
-                    st.caption("🚗 100% travel (QOF metrics are filters, not ranked)")
+                    st.caption("100% travel (QOF metrics are filters, not ranked)")
             else:
                 disease_weight_slider = st.slider(
                     "Disease %:",
@@ -1276,7 +1294,7 @@ def main():
                 travel_weight = 100 - disease_weight
                 disease_weight_norm = disease_weight / 100
                 travel_weight_norm = travel_weight / 100
-                st.caption(f"🧠 {disease_weight}% | 🚗 {travel_weight}%")
+                st.caption(f"Disease {disease_weight}% | Travel {travel_weight}%")
             
             # Buttons
             col_btn, col_clear = st.columns([2, 1])
@@ -1322,7 +1340,7 @@ def main():
                 results = pd.DataFrame()
             
             # Filter by disease prevalence
-            if disease_type == "🧠 Dementia" and dementia_df is not None:
+            if disease_type == "Dementia" and dementia_df is not None:
                 if dementia_subtype == "65+ Years":
                     dementia_col = 'DEMENTIA_REGISTER_65_PLUS'
                     prevalence_col = 'DEMENTIA_PREVALENCE_65PLUS_PCT'
@@ -1341,7 +1359,7 @@ def main():
                 if disease_weight_norm > 0:
                     results = results[results[disease_col_name] > 0]
                 
-            elif disease_type == "🩺 Diabetes" and diabetes_df is not None:
+            elif disease_type == "Diabetes" and diabetes_df is not None:
                 if diabetes_subtype == "Type 1":
                     diabetes_col = 'diabetes_type1_count'
                     prevalence_col = 'diabetes_type1_pct'
@@ -1394,7 +1412,7 @@ def main():
                     best_time = float('inf')
                     transport_used = None
                     
-                    if "🚌 Transit" in transport_modes:
+                    if "Transit" in transport_modes:
                         transit_times = prac_data['travel_time_transit_minutes'].dropna()
                         if len(transit_times) > 0:
                             min_transit = transit_times.min()
@@ -1402,7 +1420,7 @@ def main():
                                 best_time = min_transit
                                 transport_used = 'Transit'
                     
-                    if "🚶 Walking" in transport_modes:
+                    if "Walking" in transport_modes:
                         walking_times = prac_data['travel_time_walking_minutes'].dropna()
                         if len(walking_times) > 0:
                             min_walking = walking_times.min()
@@ -1545,13 +1563,13 @@ def main():
                 with hdr_r:
                     view_mode = st.radio(
                         "View:",
-                        ["🗺️ Map", "📋 List"],
+                        ["Map", "List"],
                         horizontal=True,
                         key="results_view_toggle",
                         label_visibility="collapsed"
                     )
 
-                if view_mode == "🗺️ Map":
+                if view_mode == "Map":
                     st_folium(map_obj, width="100%")
                 else:
                     # Format numeric columns for readability
@@ -1571,7 +1589,7 @@ def main():
                     st.dataframe(df_display, width="stretch", hide_index=True, height=900)
                     csv = display_df.to_csv(index=False, float_format='%.2f')
                     st.download_button(
-                        label="📥 Download CSV",
+                        label="Download CSV",
                         data=csv,
                         file_name="pic_ranked_results.csv",
                         mime="text/csv",
@@ -1662,17 +1680,17 @@ def main():
                 if 'imd_score_raw' in gp_df_display.columns:
                     imd_stats = pd.to_numeric(gp_df_display['imd_score_raw'], errors='coerce').dropna()
                     if len(imd_stats) > 0:
-                        imd_median = float(imd_stats.median())
-                        imd_q1 = float(imd_stats.quantile(0.25))
-                        imd_q3 = float(imd_stats.quantile(0.75))
+                        imd_median = int(round(float(imd_stats.median())))
+                        imd_q1 = int(round(float(imd_stats.quantile(0.25))))
+                        imd_q3 = int(round(float(imd_stats.quantile(0.75))))
                         imd_iqr = imd_q3 - imd_q1
-                        imd_min = float(imd_stats.min())
-                        imd_max = float(imd_stats.max())
+                        imd_min = int(round(float(imd_stats.min())))
+                        imd_max = int(round(float(imd_stats.max())))
 
                         st.markdown("#### IMD statistical description")
-                        st.caption(f"Dataset median: {imd_median:.3f}")
-                        st.caption(f"IQR: {imd_iqr:.3f} ({imd_q1:.3f} to {imd_q3:.3f})")
-                        st.caption(f"Min-max: {imd_min:.3f} to {imd_max:.3f}")
+                        st.caption(f"Dataset median: {imd_median}")
+                        st.caption(f"IQR: {imd_iqr} ({imd_q1} to {imd_q3})")
+                        st.caption(f"Min-max: {imd_min} to {imd_max}")
                 
                 # Filters
                 filter_col1, filter_col2 = st.columns(2)
@@ -1707,7 +1725,7 @@ def main():
                 
                 st.caption(f"Showing {len(gp_df_display)} of {len(data['gp'])} records")
                 st.dataframe(gp_df_display, width="stretch", use_container_width=True, height=600)
-                st.caption("For more information about data sources, see the **📚 Sources** tab in the sidebar.")
+                st.caption("For more information about data sources, see the Sources tab in the sidebar.")
         
         with tab2:
             st.markdown("### Hospital sites dataset")
@@ -2053,8 +2071,8 @@ def main():
         ### Data Processing & ETL
         
         For details on how this data was processed, extracted, and loaded into this tool:
-        - 📖 See [ETL_REPORT_MARCH_2026.md](../docs/ETL_REPORT_MARCH_2026.md)
-        - 📊 See [DATA_ACQUISITION_MARCH_2026.md](../docs/DATA_ACQUISITION_MARCH_2026.md)
+        - See [ETL_REPORT_MARCH_2026.md](../docs/ETL_REPORT_MARCH_2026.md)
+        - See [DATA_ACQUISITION_MARCH_2026.md](../docs/DATA_ACQUISITION_MARCH_2026.md)
         
         ---
         

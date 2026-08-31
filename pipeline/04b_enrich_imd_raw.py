@@ -89,6 +89,7 @@ def fetch_imd_raw_for_gp() -> pd.DataFrame:
 
     imd["practice_code_gp"] = _normalize_code(imd["practice_code_gp"])
     imd["imd_score_raw"] = pd.to_numeric(imd["imd_score_raw"], errors="coerce")
+    imd["imd_score_raw"] = imd["imd_score_raw"].round().astype("Int64")
     imd["imd_indicator_id"] = IMD_INDICATOR_ID
     imd["imd_source"] = IMD_SOURCE
 
