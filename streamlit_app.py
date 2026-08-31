@@ -1334,7 +1334,10 @@ def main():
                     .rename(columns={'cohort_population': 'selected_cohort_population'})
                 )
 
-                results = results.merge(cohort_by_practice, on='practice_code_gp', how='inner')
+                results = results.merge(cohort_by_practice, on='practice_code_gp', how='left')
+                results['selected_cohort_population'] = pd.to_numeric(
+                    results['selected_cohort_population'], errors='coerce'
+                ).fillna(0)
                 results = results[results['selected_cohort_population'] > 0]
             
             # Filter by disease prevalence
@@ -1400,7 +1403,7 @@ def main():
                     ].copy()
                 elif 'hospital_name' in travel_times_df.columns:
                     destination_times = travel_times_df[
-                        travel_times_df['hospital_name'].isin(selected_hospitals)
+                        travel_times_df['hospital_name'].isin(selected_hospitals or hospital_list)
                     ].copy()
                 else:
                     destination_times = pd.DataFrame()
@@ -1437,9 +1440,7 @@ def main():
                 
                 if len(practice_times) > 0:
                     travel_df = pd.DataFrame(practice_times)
-                    results = results.merge(travel_df, on='practice_code_gp', how='inner')
-                else:
-                    results = pd.DataFrame()
+                    results = results.merge(travel_df, on='practice_code_gp', how='left')
             
             # Score and rank
             if len(results) > 0:
