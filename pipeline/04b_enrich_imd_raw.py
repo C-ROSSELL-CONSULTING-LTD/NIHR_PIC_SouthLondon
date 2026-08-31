@@ -134,12 +134,31 @@ def enrich_gp_with_imd_raw() -> pd.DataFrame:
         "imd_indicator_name",
         "imd_indicator_id",
         "imd_source",
+        "imd_local_percentile",
+        "imd_local_quintile",
+        "imd_local_rank_note",
     ]
     drop_cols = [c for c in imd_cols if c in gp.columns]
     if drop_cols:
         gp = gp.drop(columns=drop_cols)
 
     enriched = gp.merge(imd, on="practice_code_gp", how="left")
+
+    # Local interpretation fields are computed relative to the currently matched GP set.
+    score = pd.to_numeric(enriched["imd_score_raw"], errors="coerce")
+    matched_mask = score.notna()
+    if matched_mask.any():
+        pct = score[matched_mask].rank(method="average", pct=True) * 100
+        enriched.loc[matched_mask, "imd_local_percentile"] = pct.round(1)
+        quintile = pd.qcut(pct, q=5, labels=[1, 2, 3, 4, 5], duplicates="drop")
+        enriched.loc[matched_mask, "imd_local_quintile"] = pd.to_numeric(quintile, errors="coerce").astype("Int64")
+    else:
+        enriched["imd_local_percentile"] = pd.NA
+        enriched["imd_local_quintile"] = pd.NA
+
+    enriched["imd_local_rank_note"] = (
+        "Relative within current matched GP dataset (not national IMD deciles)"
+    )
 
     enriched["imd_match_status"] = enriched["imd_score_raw"].apply(
         lambda v: "matched" if pd.notna(v) else "unmatched"

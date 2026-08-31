@@ -56,6 +56,13 @@ ONS Open Geography Portal: For LSOA geographic boundaries and demographic data.
 
 Public Health England (Fingertips): For disease prevalence data.
 
+## IMD Interpretation Notes
+
+- GP-level IMD source in this app is Fingertips indicator `94240`, area type `7` (GP), time period `2025`.
+- `imd_score_raw` is the authoritative score persisted from the ETL enrichment step.
+- `imd_local_percentile` and `imd_local_quintile` are computed locally from the currently matched GP dataset to provide distribution context.
+- Local percentile/quintile values are for interpretation only and are not equivalent to official national IMD deciles.
+
 # Key Caveats & Limitations
 
 Patient Population Proxy: The tool uses the demographics of the LSOA (Lower Layer Super Output Area) where a GP practice is physically located as a proxy for its patient population. This is an estimate and does not reflect the exact registered patient list.

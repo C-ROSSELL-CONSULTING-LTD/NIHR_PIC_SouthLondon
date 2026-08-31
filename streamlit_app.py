@@ -21,6 +21,76 @@ from config import HEALTH_METRIC_REGISTRY
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
+def render_distribution_histogram(
+    values,
+    *,
+    threshold,
+    height=70,
+    bins=20,
+    bin_width=None,
+    x_axis_format="~s",
+    tooltip_label="Practices",
+):
+    """Render a shared histogram style used by GP size and IMD context charts."""
+    import numpy as np
+    import altair as alt
+
+    series = pd.to_numeric(pd.Series(values), errors='coerce').dropna()
+    if series.empty:
+        return None
+
+    min_v = float(series.min())
+    max_v = float(series.max())
+
+    if max_v <= min_v:
+        max_v = min_v + 1.0
+
+    if bin_width is not None and float(bin_width) > 0:
+        step = float(bin_width)
+        bin_edges = np.arange(min_v, max_v + step, step)
+        if len(bin_edges) < 2:
+            bin_edges = np.array([min_v, min_v + step])
+        if bin_edges[-1] < max_v:
+            bin_edges = np.append(bin_edges, bin_edges[-1] + step)
+    else:
+        bin_edges = np.linspace(min_v, max_v, bins + 1)
+
+    if len(bin_edges) < 2:
+        bin_edges = np.array([min_v, max_v])
+
+    counts, _ = np.histogram(series.values, bins=bin_edges)
+
+    hist_df = pd.DataFrame({
+        'bin_left': bin_edges[:-1],
+        'count': counts.astype(int),
+    })
+    hist_df['color'] = hist_df['bin_left'].apply(
+        lambda x: '#d0dff2' if x < threshold else '#003087'
+    )
+
+    chart = (
+        alt.Chart(hist_df)
+        .mark_bar(size=6)
+        .encode(
+            x=alt.X(
+                'bin_left:Q',
+                scale=alt.Scale(domain=[min_v, max_v], nice=False),
+                axis=alt.Axis(title=None, labelFontSize=9, format=x_axis_format, tickCount=6),
+            ),
+            y=alt.Y('count:Q', axis=alt.Axis(title=None, labelFontSize=9, tickMinStep=1)),
+            color=alt.Color('color:N', scale=None, legend=None),
+            tooltip=[
+                alt.Tooltip('bin_left:Q', title='From', format=','),
+                alt.Tooltip('count:Q', title=tooltip_label),
+            ],
+        )
+        .properties(height=height)
+        .configure_view(strokeWidth=0)
+        .configure_axis(grid=False)
+    )
+    return chart
+
 # ============================================================================
 # PAGE CONFIGURATION
 # ============================================================================
@@ -186,6 +256,16 @@ st.markdown("""
         .stMultiSelect [data-testid="stWidgetLabel"] p,
         .stMultiSelect span {
             font-size: 12px !important;
+        }
+        /* Ensure dropdown/select text is readable (black) */
+        div[data-baseweb="select"] > div,
+        div[data-baseweb="select"] input,
+        div[data-baseweb="popover"] [role="option"],
+        .stSelectbox div[data-baseweb="select"] > div,
+        .stSelectbox div[data-baseweb="select"] span,
+        .stMultiSelect div[data-baseweb="select"] > div,
+        .stMultiSelect div[data-baseweb="select"] span {
+            color: #000000 !important;
         }
         /* Captions */
         .stCaptionContainer p, small {
@@ -787,7 +867,7 @@ def create_map(
 
                 is_highlighted = row.get('university_name') in highlighted_universities
                 icon_color = 'lightgreen' if is_highlighted else 'blue'
-                icon = folium.Icon(color=icon_color, icon='education')
+                icon = folium.Icon(color=icon_color, icon='graduation-cap', prefix='fa')
 
                 folium.Marker(
                     location=[row['latitude'], row['longitude']],
@@ -908,6 +988,9 @@ def main():
             else:
                 gp_icb_filtered = gp_all
 
+            # Preserve ICB-scoped baseline for static IMD distribution context.
+            gp_icb_scope = gp_icb_filtered.copy()
+
             # GP size
             st.markdown("**GP Size**")
             if 'TOTAL_POPULATION' in gp_icb_filtered.columns:
@@ -930,42 +1013,13 @@ def main():
                         label_visibility="collapsed",
                     )
 
-                    # Histogram: bin into 1,000-patient buckets, shade bars left of threshold
-                    import numpy as np
-                    _bin_edges = np.arange(0, gp_size_max_bound + 1001, 1000)
-                    _counts, _ = np.histogram(gp_size_series.dropna().values, bins=_bin_edges)
-                    _hist_df = pd.DataFrame({
-                        "bin_left": _bin_edges[:-1].astype(int),
-                        "count": _counts.astype(int),
-                    })
-                    _hist_df["color"] = _hist_df["bin_left"].apply(
-                        lambda x: "#d0dff2" if x < gp_size_min else "#003087"
-                    )
-                    import altair as alt
-                    _chart = (
-                        alt.Chart(_hist_df)
-                        .mark_bar(size=6)
-                        .encode(
-                            x=alt.X("bin_left:Q", axis=alt.Axis(
-                                title=None, labelFontSize=9,
-                                format="~s", tickCount=6,
-                            )),
-                            y=alt.Y("count:Q", axis=alt.Axis(
-                                title=None, labelFontSize=9, tickMinStep=1,
-                            )),
-                            color=alt.Color(
-                                "color:N",
-                                scale=None,
-                                legend=None,
-                            ),
-                            tooltip=[
-                                alt.Tooltip("bin_left:Q", title="From", format=","),
-                                alt.Tooltip("count:Q", title="Practices"),
-                            ],
-                        )
-                        .properties(height=70)
-                        .configure_view(strokeWidth=0)
-                        .configure_axis(grid=False)
+                    _chart = render_distribution_histogram(
+                        gp_size_series,
+                        threshold=float(gp_size_min),
+                        height=70,
+                        bin_width=1000,
+                        x_axis_format='~s',
+                        tooltip_label='Practices',
                     )
                     _icb_label = {"SE London": "SE London", "SW London": "SW London"}.get(icb_choice, "South London")
                     st.caption(f"Distribution of {_icb_label} GP practices by registered population")
@@ -1016,6 +1070,88 @@ def main():
                     st.caption("IMD score unavailable for selected practices")
             else:
                 st.caption("IMD score column not found. Run pipeline/04b_enrich_imd_raw.py.")
+
+            # IMD distribution context (mirrors GP size distribution style)
+            st.markdown("**IMD Distribution Context**")
+            if 'imd_score_raw' in gp_icb_scope.columns:
+                imd_context_series = pd.to_numeric(gp_icb_scope['imd_score_raw'], errors='coerce')
+                imd_context_matched = gp_icb_scope.loc[imd_context_series.notna()].copy()
+                if len(imd_context_matched) > 0:
+                    imd_context_values = pd.to_numeric(imd_context_matched['imd_score_raw'], errors='coerce')
+                    # Local interpretation fields fallback if not already persisted by ETL.
+                    if 'imd_local_percentile' not in imd_context_matched.columns:
+                        imd_context_matched['imd_local_percentile'] = (imd_context_values.rank(method='average', pct=True) * 100).round(1)
+                    if 'imd_local_quintile' not in imd_context_matched.columns:
+                        _pct = pd.to_numeric(imd_context_matched['imd_local_percentile'], errors='coerce')
+                        imd_context_matched['imd_local_quintile'] = pd.to_numeric(
+                            pd.qcut(_pct, q=5, labels=[1, 2, 3, 4, 5], duplicates='drop'),
+                            errors='coerce'
+                        ).astype('Int64')
+                    if 'imd_local_rank_note' not in imd_context_matched.columns:
+                        imd_context_matched['imd_local_rank_note'] = (
+                            'Relative within current matched GP dataset (not national IMD deciles)'
+                        )
+
+                    _selected_score = None
+                    if 'selected_gps' in locals() and selected_gps:
+                        _selected_rows = imd_context_matched[imd_context_matched['practice_name'].isin(selected_gps)]
+                        if len(_selected_rows) > 0:
+                            _selected_score = float(pd.to_numeric(_selected_rows['imd_score_raw'], errors='coerce').dropna().iloc[0])
+
+                    _hist = render_distribution_histogram(
+                        imd_context_values,
+                        threshold=float(_selected_score) if _selected_score is not None else float(imd_context_values.median()),
+                        height=70,
+                        bins=40,
+                        x_axis_format='~s',
+                        tooltip_label='Practices',
+                    )
+
+                    _median = float(imd_context_values.median())
+                    _q1 = float(imd_context_values.quantile(0.25))
+                    _q3 = float(imd_context_values.quantile(0.75))
+                    _iqr = _q3 - _q1
+
+                    _chart_imd = _hist
+                    st.caption('Distribution of matched GP IMD raw scores (Fingertips indicator 94240)')
+                    st.altair_chart(_chart_imd, width='stretch')
+
+                    _sel_pct = None
+                    _sel_quint = None
+                    if _selected_score is not None and 'selected_gps' in locals() and selected_gps:
+                        _selected_rows = imd_context_matched[imd_context_matched['practice_name'].isin(selected_gps)]
+                        if len(_selected_rows) > 0:
+                            _sel_pct = pd.to_numeric(_selected_rows['imd_local_percentile'], errors='coerce').dropna()
+                            _sel_quint = pd.to_numeric(_selected_rows['imd_local_quintile'], errors='coerce').dropna()
+
+                    # Fallback: derive local percentile/quintile from selected score when row fields are unavailable.
+                    if _selected_score is not None and (_sel_pct is None or len(_sel_pct) == 0):
+                        _sel_pct_value = float((imd_context_values <= _selected_score).mean() * 100)
+                        _sel_pct = pd.Series([round(_sel_pct_value, 1)])
+                    if _selected_score is not None and (_sel_quint is None or len(_sel_quint) == 0) and _sel_pct is not None and len(_sel_pct) > 0:
+                        _pct_value = float(_sel_pct.iloc[0])
+                        _sel_quint = pd.Series([min(5, max(1, int((_pct_value - 1e-9) // 20) + 1))])
+
+                    _min_v = float(imd_context_values.min())
+                    _max_v = float(imd_context_values.max())
+
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.caption(f"Selected score: {(_selected_score if _selected_score is not None else _median):.3f}")
+                        st.caption(f"Selected percentile: {float(_sel_pct.iloc[0]):.1f}" if _sel_pct is not None and len(_sel_pct) > 0 else "Selected percentile: n/a")
+                        st.caption(f"Selected quintile: {int(_sel_quint.iloc[0])}" if _sel_quint is not None and len(_sel_quint) > 0 else "Selected quintile: n/a")
+                    with c2:
+                        st.caption(f"Dataset median: {_median:.3f}")
+                        st.caption(f"IQR: {_iqr:.3f} ({_q1:.3f} to {_q3:.3f})")
+                        st.caption(f"Min-max: {_min_v:.3f} to {_max_v:.3f}")
+
+                    st.caption('Local rank is relative to matched practices in this dataset.')
+                    st.caption('Narrow spread means adjacent quintiles may be practically similar.')
+                    st.caption('This is Fingertips GP indicator distribution, not national LSOA IMD deciles.')
+                else:
+                    st.caption('No IMD values available for matched practices in current filters.')
+            else:
+                st.caption('IMD score column not found. Run pipeline/04b_enrich_imd_raw.py.')
 
             hosp_scope = st.radio("Level:", ["Hospital", "Trust"], horizontal=True)
             if hosp_scope == "Trust":
@@ -1307,6 +1443,12 @@ def main():
                 st.session_state['pic_results_df'] = results
                 st.session_state['pic_highlighted_codes'] = set(results['practice_code_gp'].unique())
                 st.session_state['pic_disease_col'] = disease_col_name
+                st.session_state['pic_no_results'] = False
+            else:
+                st.session_state['pic_results_df'] = pd.DataFrame()
+                st.session_state['pic_highlighted_codes'] = set()
+                st.session_state['pic_disease_col'] = disease_col_name
+                st.session_state['pic_no_results'] = True
         
         # Read persisted results (survive reruns/scrolling)
         highlighted_gp_codes = st.session_state.get('pic_highlighted_codes', set())
@@ -1314,6 +1456,7 @@ def main():
         disease_col_name = st.session_state.get('pic_disease_col', None)
         prevalence_col_name = st.session_state.get('pic_prevalence_col', None)
         diabetes_proxy_mode = st.session_state.get('pic_diabetes_proxy_mode', False)
+        pic_no_results = st.session_state.get('pic_no_results', False)
         
         # ========== RIGHT COLUMN: MAP AND RESULTS ==========
         with right_col:
@@ -1435,7 +1578,12 @@ def main():
                         width="stretch",
                     )
             else:
-                # No search yet — show full-height map
+                # Show clear feedback when the current search returned no matches.
+                if pic_no_results:
+                    st.info(
+                        "No practices matched your search criteria. Try widening filters such as travel time, cohort, disease selection, or ICB scope."
+                    )
+                # No search yet (or no matches) — show full-height map
                 st_folium(map_obj, width="100%")
     
     # ========================================================================
@@ -1842,7 +1990,8 @@ def main():
         - **Indicator:** `94240`, Deprivation score (IMD 2025)
         - **Geography:** General Practice, Fingertips area type 7
         - **Join:** NHS GP ODS practice code to Fingertips `Area Code`
-        - **Interpretation:** Raw deprivation score retained; the application does not calculate a local decile
+        - **Interpretation:** `imd_score_raw` is the authoritative raw value; local context fields (`imd_local_percentile`, `imd_local_quintile`) are computed within the currently matched GP dataset for interpretation
+        - **Caveat:** Local percentile/quintile values are relative to this dataset and are not equivalent to official national IMD deciles
         - **Coverage:** 322 of 327 South London practices matched in the current extraction (98.5%)
         
         ---
