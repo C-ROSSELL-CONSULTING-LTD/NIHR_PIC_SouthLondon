@@ -1360,8 +1360,15 @@ def main():
 
             # Apply cohort filter only when the user has narrowed the cohort.
             if cohort_df is not None and len(cohort_df) > 0 and selected_sexes and selected_age_bands:
+                sex_filter_values = {
+                    'Female': 'FEMALE',
+                    'Male': 'MALE',
+                    'FEMALE': 'FEMALE',
+                    'MALE': 'MALE',
+                }
+                selected_sex_values = [sex_filter_values.get(sex, sex.upper()) for sex in selected_sexes]
                 cohort_filtered = cohort_df[
-                    cohort_df['SEX'].isin(selected_sexes) &
+                    cohort_df['SEX'].isin(selected_sex_values) &
                     cohort_df['AGE_GROUP_5'].isin(selected_age_bands)
                 ].copy()
 
