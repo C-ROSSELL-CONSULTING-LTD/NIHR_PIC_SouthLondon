@@ -1148,19 +1148,6 @@ def main():
                     _min_v = float(imd_context_values.min())
                     _max_v = float(imd_context_values.max())
 
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        st.caption(f"Selected score: {(_selected_score if _selected_score is not None else _median):.3f}")
-                        st.caption(f"Selected percentile: {float(_sel_pct.iloc[0]):.1f}" if _sel_pct is not None and len(_sel_pct) > 0 else "Selected percentile: n/a")
-                        st.caption(f"Selected quintile: {int(_sel_quint.iloc[0])}" if _sel_quint is not None and len(_sel_quint) > 0 else "Selected quintile: n/a")
-                    with c2:
-                        st.caption(f"Dataset median: {_median:.3f}")
-                        st.caption(f"IQR: {_iqr:.3f} ({_q1:.3f} to {_q3:.3f})")
-                        st.caption(f"Min-max: {_min_v:.3f} to {_max_v:.3f}")
-
-                    st.caption('Local rank is relative to matched practices in this dataset.')
-                    st.caption('Narrow spread means adjacent quintiles may be practically similar.')
-                    st.caption('This is Fingertips GP indicator distribution, not national LSOA IMD deciles.')
                 else:
                     st.caption('No IMD values available for matched practices in current filters.')
             else:
@@ -1671,6 +1658,21 @@ def main():
             if data['gp'] is not None:
                 gp_df_display = data['gp'].copy()
                 st.write(f"**Total Records:** {len(gp_df_display)}")
+
+                if 'imd_score_raw' in gp_df_display.columns:
+                    imd_stats = pd.to_numeric(gp_df_display['imd_score_raw'], errors='coerce').dropna()
+                    if len(imd_stats) > 0:
+                        imd_median = float(imd_stats.median())
+                        imd_q1 = float(imd_stats.quantile(0.25))
+                        imd_q3 = float(imd_stats.quantile(0.75))
+                        imd_iqr = imd_q3 - imd_q1
+                        imd_min = float(imd_stats.min())
+                        imd_max = float(imd_stats.max())
+
+                        st.markdown("#### IMD statistical description")
+                        st.caption(f"Dataset median: {imd_median:.3f}")
+                        st.caption(f"IQR: {imd_iqr:.3f} ({imd_q1:.3f} to {imd_q3:.3f})")
+                        st.caption(f"Min-max: {imd_min:.3f} to {imd_max:.3f}")
                 
                 # Filters
                 filter_col1, filter_col2 = st.columns(2)
@@ -2003,8 +2005,10 @@ def main():
         - **Indicator:** `94240`, Deprivation score (IMD 2025)
         - **Geography:** General Practice, Fingertips area type 7
         - **Join:** NHS GP ODS practice code to Fingertips `Area Code`
-        - **Interpretation:** `imd_score_raw` is the authoritative raw value; local context fields (`imd_local_percentile`, `imd_local_quintile`) are computed within the currently matched GP dataset for interpretation
-        - **Caveat:** Local percentile/quintile values are relative to this dataset and are not equivalent to official national IMD deciles
+        - **Interpretation:** `imd_score_raw` is the authoritative raw value used in this tool
+        - **Interpretation:** Local ranking fields (`imd_local_percentile`, `imd_local_quintile`) are relative to matched practices in this dataset
+        - **Interpretation:** A narrow score spread can make adjacent quintiles practically similar
+        - **Interpretation:** This is a Fingertips GP indicator distribution and is not equivalent to national LSOA IMD deciles
         - **Coverage:** 322 of 327 South London practices matched in the current extraction (98.5%)
         
         ---

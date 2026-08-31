@@ -1,0 +1,22 @@
+Travel Times Site Type Reconciliation Report
+Generated: 2026-08-31T15:44:42
+
+Input file: data/processed/travel_times_optimized.csv
+Backup file: data/processed/travel_times_optimized.csv.bak_20260831_154442
+
+Row length counts before rewrite:
+  9: 5886
+  12: 8829
+
+Processing counts:
+  9_field_rows: 5886
+  9_field_matched: 5886
+  12_field_kept_type: 8829
+  12_field_rows: 8829
+
+Final counts by site_type:
+  Hospital: 12099
+  University: 2616
+
+Unknown site names (top 25):
+  none
