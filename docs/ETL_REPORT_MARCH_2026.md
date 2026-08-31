@@ -192,6 +192,19 @@ Postcode → Geocoding Service → Lat/Lon
 
 ---
 
+## IMD Methods Note (March 2026 Update)
+
+- Source: Fingertips indicator `94240`, GP area type `7`, time period `2025`.
+- ETL keeps `imd_score_raw` as the authoritative raw deprivation value matched by GP practice code.
+- Additional interpretability fields are computed from the matched GP set:
+   - `imd_local_percentile` (0-100, monotonic rank percentile within current matched GP dataset)
+   - `imd_local_quintile` (1-5 bands derived from local percentile distribution)
+   - `imd_local_rank_note` (explicit display caveat text)
+- These local fields support interpretation of spread and relative position only.
+- They are not equivalent to official national IMD deciles and should not be reported as such.
+
+---
+
 ## Next Steps
 
 ### Before April Coding Starts
