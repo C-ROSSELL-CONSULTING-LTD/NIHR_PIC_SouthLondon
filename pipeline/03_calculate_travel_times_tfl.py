@@ -22,6 +22,7 @@ import logging
 import asyncio
 import aiohttp
 import pandas as pd
+from datetime import datetime, timedelta
 from pathlib import Path
 from threading import Lock
 
@@ -82,6 +83,46 @@ def save_tfl_cache(path, cache):
             json.dump(cache, f)
         os.replace(tmp_path, path)
 
+
+def valid_journey_coverage(df):
+    """Return fraction of rows with at least one valid travel time."""
+    if df is None or df.empty:
+        return 0.0
+
+    mode_cols = [
+        'travel_time_car_minutes',
+        'travel_time_transit_minutes',
+        'travel_time_walking_minutes',
+        'closest_travel_minutes',
+    ]
+    available_cols = [c for c in mode_cols if c in df.columns]
+    if not available_cols:
+        return 0.0
+
+    valid_mask = pd.Series(False, index=df.index)
+    for col in available_cols:
+        valid_mask = valid_mask | pd.to_numeric(df[col], errors='coerce').notna()
+
+    return float(valid_mask.mean())
+
+
+def nearest_wednesday_9am(now=None):
+    """Return the nearest Wednesday at 09:00 as (YYYYMMDD, HHMM)."""
+    current = now or datetime.now()
+    target_weekday = 2  # Monday=0, Wednesday=2
+    days_forward = (target_weekday - current.weekday()) % 7
+    days_backward = (current.weekday() - target_weekday) % 7
+
+    if days_forward < days_backward:
+        target_date = current.date() + timedelta(days=days_forward)
+    elif days_backward < days_forward:
+        target_date = current.date() - timedelta(days=days_backward)
+    else:
+        target_date = current.date()
+
+    target_dt = datetime.combine(target_date, datetime.min.time()).replace(hour=9, minute=0)
+    return target_dt.strftime("%Y%m%d"), target_dt.strftime("%H%M")
+
 # ============================================================================
 # TfL API
 # ============================================================================
@@ -104,10 +145,11 @@ async def query_tfl_mode(session, from_coord, to_coord, mode, semaphore, max_ret
     if mode == "Car":
         return None
     
+    tfl_date, tfl_time = nearest_wednesday_9am()
     params = {
         "app_key": TFL_API_KEY,
-        "date": "20260501",
-        "time": "0900",
+        "date": tfl_date,
+        "time": tfl_time,
         "timeIs": "Departing",
         "mode": mode_param_map.get(mode, "driving"),
     }
@@ -354,9 +396,52 @@ def main():
     result_df = pd.DataFrame(results)
     
     logger.info(f"[SAVE] Writing {len(result_df)} results to CSV...")
+
+    # Guard against accidental wipe: do not replace an existing dataset with near-empty times.
+    new_coverage = valid_journey_coverage(result_df)
+    existing_df = None
+    existing_coverage = 0.0
+    if os.path.exists(OUTPUT_FILE):
+        try:
+            existing_df = pd.read_csv(OUTPUT_FILE)
+            existing_coverage = valid_journey_coverage(existing_df)
+        except Exception as e:
+            logger.warning(f"Could not read existing output for safeguard check: {e}")
+
+    if existing_df is not None and existing_coverage > 0.50 and new_coverage < 0.10:
+        logger.error(
+            "[SAFEGUARD] New travel times are mostly empty "
+            f"(coverage {new_coverage:.1%}) while existing output has data "
+            f"(coverage {existing_coverage:.1%}). Keeping existing file."
+        )
+        return
+
     os.makedirs(os.path.dirname(OUTPUT_FILE) or ".", exist_ok=True)
-    result_df.to_csv(OUTPUT_FILE, index=False)
-    logger.info(f"[OK] Saved: {OUTPUT_FILE}")
+
+    key_cols = ['practice_code', 'destination_name', 'destination_type']
+    if os.path.exists(OUTPUT_FILE):
+        try:
+            existing_df = pd.read_csv(OUTPUT_FILE)
+        except Exception as e:
+            logger.warning(f"Could not read existing output for append-only write: {e}")
+            existing_df = pd.DataFrame()
+
+        if not existing_df.empty and all(col in existing_df.columns for col in key_cols):
+            existing_keys = set(existing_df[key_cols].astype(str).itertuples(index=False, name=None))
+        else:
+            existing_keys = set()
+
+        new_mask = ~result_df[key_cols].astype(str).apply(tuple, axis=1).isin(existing_keys)
+        append_df = result_df[new_mask].copy()
+
+        if append_df.empty:
+            logger.info("[OK] No new rows to append; existing file unchanged")
+        else:
+            append_df.to_csv(OUTPUT_FILE, mode='a', index=False, header=False)
+            logger.info(f"[OK] Appended {len(append_df)} new rows to: {OUTPUT_FILE}")
+    else:
+        result_df.to_csv(OUTPUT_FILE, index=False)
+        logger.info(f"[OK] Created and saved: {OUTPUT_FILE}")
     
     # Statistics
     logger.info("\n" + "=" * 80)
